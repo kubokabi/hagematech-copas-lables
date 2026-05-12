@@ -1,1086 +1,686 @@
-/* =========================================================
-   HGM TABLE TOOLS
-   Auto Table Detection
-   Excel-like Selective Copy + Session Row Labels
-
-   Launcher Modes:
-   - fixed    : floating fixed button, no drag, no minimize
-   - shortcut : custom HTML trigger, Ctrl + T, draggable, minimizable
-   ========================================================= */
-
 const DEFAULT_OPTIONS = {
-    tableSelector: "table",
-
-    userId: "guest",
     pageKey: window.location.pathname,
-    storagePrefix: "hgm_table_tools_labels",
+    storagePrefix: "hgm_any_tools_labels",
+    defaultColor: "#2563eb",
 
-    /*
-    |--------------------------------------------------------------------------
-    | Launcher
-    |--------------------------------------------------------------------------
-    | fixed    = floating fixed button, no minimize, no drag
-    | shortcut = custom HTML trigger, Ctrl + T, draggable + minimizable
-    |--------------------------------------------------------------------------
-    */
-    launcher: "fixed",
+    selector: [
+        "td",
+        "th",
+        "article",
+        "section",
+        ".card",
+        ".alert",
+        ".badge",
+        ".btn",
+        "button",
+        "a",
+        "p",
+        "span",
+        "div",
+        "li",
+        "pre",
+        "code",
+        "blockquote",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6"
+    ].join(","),
 
-    autoDetectInterval: 700,
-    autoDetectDuration: 8000,
-
-    shortcut: {
-        ctrl: true,
-        shift: false,
-        key: "T"
-    },
-
-    copyShortcut: {
-        ctrl: true,
-        shift: false,
-        key: "C"
-    },
-
-    copy: {
-        includeHiddenCells: false,
-        excludeColumnTexts: []
-    },
-
-    labels: {
-        colors: ["blue", "red", "yellow", "green", "gray", "purple"]
-    },
-
-    rowKey: {
-        selector: null,
-        columnIndex: null,
-        headerCandidates: [
-            "lot",
-            "lot no",
-            "lot_no",
-            "lot number",
-            "id",
-            "deal id",
-            "sku",
-            "nik",
-            "account",
-            "account no",
-            "account_no",
-            "code",
-            "number",
-            "no"
-        ]
-    }
+    ignoreSelector: [
+        "#hgmAnyMenu",
+        "#hgmAnyMenu *",
+        "#hgmAnyBadge",
+        "#hgmAnyBadge *",
+        "#hgmAnyToast",
+        "#hgmAnyToast *",
+        "#hgmAnyLabelPopover",
+        "#hgmAnyLabelPopover *",
+        "#hgmAnyWarning",
+        "#hgmAnyWarning *",
+        "script",
+        "style",
+        "meta",
+        "link",
+        "svg",
+        "path"
+    ].join(",")
 };
 
-export function createTableTools(options = {}) {
-    const attributeOptions = readAttributeOptions();
-    const config = deepMerge(
-        DEFAULT_OPTIONS,
-        deepMerge(attributeOptions, options)
-    );
+export default function createHgmAnyTools(userOptions = {}) {
+    const attrOptions = readAttributeOptions();
+    const config = deepMerge(DEFAULT_OPTIONS, deepMerge(attrOptions, userOptions));
 
     let mounted = false;
-    let panelOpen = false;
-    let panelMinimized = false;
-    let activeView = "home";
+    let activeMode = null;
 
-    let copyMode = false;
-    let labelMode = false;
+    let isDragging = false;
+    let anchorCell = null;
+    let activeLabelTarget = null;
+    let pendingModeAfterWarning = null;
 
-    let observer = null;
-    let autoDetectTimer = null;
-    let autoDetectStopTimer = null;
+    const selectedMap = new Map();
 
-    let lastTableSignature = "";
-    let isSelectInteracting = false;
-    let refreshLocked = false;
-
-    let isMouseSelecting = false;
-    let copyAnchorCell = null;
-    let copyCurrentCell = null;
-    let selectedCellMap = new Map();
-
-    let labelAnchorRow = null;
-    let selectedRowMap = new Map();
-
-    let activeRowKeysForLabel = [];
-
-    let isPanelDragging = false;
-    let panelDragOffsetX = 0;
-    let panelDragOffsetY = 0;
-    let panelHasCustomPosition = false;
-
-    function isFixedLauncher() {
-        return normalize(config.launcher).toLowerCase() === "fixed";
-    }
-
-    function isShortcutLauncher() {
-        return normalize(config.launcher).toLowerCase() === "shortcut";
-    }
+    const api = {
+        mount,
+        destroy,
+        openMenu,
+        closeMenu,
+        disableMode,
+        copySelected,
+        clearSelection,
+        renderStoredLabels
+    };
 
     function mount() {
         if (mounted) return api;
 
-        injectRuntimeStyles();
         createUI();
         bindEvents();
-        startAutoDetection();
-
-        refreshTableList();
         renderStoredLabels();
 
         mounted = true;
-
         return api;
     }
 
     function destroy() {
         unbindEvents();
-        stopAutoDetection();
 
-        document.getElementById("hgmToolsFab")?.remove();
-        document.getElementById("hgmToolsPanel")?.remove();
-        document.getElementById("hgmToolsToast")?.remove();
-        document.getElementById("hgmToolsLabelPopover")?.remove();
+        document.getElementById("hgmAnyMenu")?.remove();
+        document.getElementById("hgmAnyBadge")?.remove();
+        document.getElementById("hgmAnyToast")?.remove();
+        document.getElementById("hgmAnyLabelPopover")?.remove();
+        document.getElementById("hgmAnyWarning")?.remove();
 
-        document.body.classList.remove("hgm-copy-mode-active");
-        document.body.classList.remove("hgm-label-mode-active");
+        document.body.classList.remove("hgm-any-copas-active");
+        document.body.classList.remove("hgm-any-labels-active");
 
         clearSelection(false);
-        clearRowSelection(false);
-
         mounted = false;
     }
 
-    function storageKey() {
-        return [
-            config.storagePrefix,
-            config.userId || "guest",
-            config.pageKey || window.location.pathname
-        ].join(":");
-    }
-
-    function getStoredLabels() {
-        try {
-            const raw = sessionStorage.getItem(storageKey());
-            return raw ? JSON.parse(raw) : {};
-        } catch {
-            return {};
-        }
-    }
-
-    function saveStoredLabels(data) {
-        sessionStorage.setItem(storageKey(), JSON.stringify(data || {}));
-    }
-
     function createUI() {
-        if (document.getElementById("hgmToolsPanel")) return;
+        if (document.getElementById("hgmAnyMenu")) return;
 
-        if (isFixedLauncher()) {
-            const fab = document.createElement("button");
-            fab.id = "hgmToolsFab";
-            fab.type = "button";
-            fab.className = "hgm-tools-fab";
-            fab.title = "Table Tools";
-            fab.innerHTML = `<span>☷</span>`;
-            document.body.appendChild(fab);
-        }
+        const menu = document.createElement("div");
+        menu.id = "hgmAnyMenu";
+        menu.className = "hgm-any-menu";
 
-        const panel = document.createElement("div");
-        panel.id = "hgmToolsPanel";
-        panel.className = isShortcutLauncher()
-            ? "hgm-tools-panel hgm-tools-panel-shortcut"
-            : "hgm-tools-panel hgm-tools-panel-fixed";
+        menu.innerHTML = `
+            <div class="hgm-any-menu-card">
+                <button type="button" class="hgm-any-menu-close" data-hgm-close-menu>×</button>
 
-        panel.innerHTML = `
-            <div class="hgm-tools-header" data-hgm-drag-handle>
-                <div class="hgm-tools-header-text">
-                    <div class="hgm-tools-title">Table Tools</div>
-                    <div class="hgm-tools-subtitle">Excel-like copy and temporary row labels</div>
-                </div>
+                <div class="hgm-any-main-view" data-hgm-main-view>
+                    <div class="hgm-any-menu-title">Choose Tools Mode</div>
+                    <div class="hgm-any-menu-subtitle">
+                        Select one mode to continue working on this page.
+                    </div>
 
-                <div class="hgm-tools-window-actions">
-                    ${isShortcutLauncher()
-                ? `<button type="button" class="hgm-tools-minimize" data-hgm-minimize title="Minimize">−</button>`
-                : ``
-            }
-                    <button type="button" class="hgm-tools-close" data-hgm-close title="Close">×</button>
-                </div>
-            </div>
+                    <div class="hgm-any-menu-options">
+                        <button type="button" class="hgm-any-option" data-hgm-mode="copas">
+                            <strong>Copas</strong>
+                            <span>Select content like Excel, then copy it.</span>
+                        </button>
 
-            <div class="hgm-tools-body">
-                <div class="hgm-tools-view is-active" data-hgm-view="home">
-                    <button type="button" class="hgm-tools-card" data-hgm-open="copy">
-                        <strong>Selective Copy</strong>
-                        <span>Select cells like Excel, then paste into Excel or Google Sheets.</span>
-                    </button>
+                        <button type="button" class="hgm-any-option" data-hgm-mode="labels">
+                            <strong>Labels</strong>
+                            <span>Create and apply temporary labels to any content.</span>
+                        </button>
+                    </div>
 
-                    <button type="button" class="hgm-tools-card" data-hgm-open="label">
-                        <strong>Session Row Labels</strong>
-                        <span>Create temporary labels for selected rows without using a database.</span>
+                    <button type="button" class="hgm-any-guide" data-hgm-guide>
+                        GUIDE
                     </button>
                 </div>
 
-                <div class="hgm-tools-view" data-hgm-view="copy">
-                    <button type="button" class="hgm-tools-back" data-hgm-open="home">← Back</button>
+                <div class="hgm-any-guide-view" data-hgm-guide-view>
+                    <button type="button" class="hgm-any-back" data-hgm-guide-back>
+                        ← Back
+                    </button>
 
-                    <label class="hgm-tools-label">Detected Tables</label>
-                    <select id="hgmToolsTableSelect" class="hgm-tools-select"></select>
+                    <div class="hgm-any-guide-title">Shortcut Guide</div>
 
-                    <div class="hgm-tools-actions">
-                        <button type="button" class="hgm-tools-button primary" data-hgm-copy-mode>
-                            Enable Selection Mode
-                        </button>
-
-                        <button type="button" class="hgm-tools-button dark" data-hgm-copy-selected>
-                            Copy Selected Cells
-                        </button>
-
-                        <button type="button" class="hgm-tools-button light" data-hgm-clear-selection>
-                            Clear Selection
-                        </button>
+                    <div class="hgm-any-guide-item">
+                        <kbd>Ctrl</kbd> + <kbd>T</kbd>
+                        <span>Open mode chooser. If blocked by browser, use Alt + T.</span>
                     </div>
 
-                    <div class="hgm-tools-info">
-                        Click and drag to select a range. Shift + click extends the range.
-                        Click a column header to select a column. Alt / Option + click a row to select a row.
-                    </div>
-                </div>
-
-                <div class="hgm-tools-view" data-hgm-view="label">
-                    <button type="button" class="hgm-tools-back" data-hgm-open="home">← Back</button>
-
-                    <div class="hgm-tools-warning">
-                        Labels are stored in sessionStorage. They are temporary and may disappear when the browser session ends.
+                    <div class="hgm-any-guide-item">
+                        <kbd>Alt</kbd> + <kbd>T</kbd>
+                        <span>Open mode chooser fallback.</span>
                     </div>
 
-                    <label class="hgm-tools-label">Detected Tables</label>
-                    <select id="hgmToolsLabelTableSelect" class="hgm-tools-select"></select>
-
-                    <div class="hgm-tools-actions">
-                        <button type="button" class="hgm-tools-button primary" data-hgm-label-mode>
-                            Enable Row Label Mode
-                        </button>
-
-                        <button type="button" class="hgm-tools-button light" data-hgm-refresh-labels>
-                            Refresh Labels
-                        </button>
-
-                        <button type="button" class="hgm-tools-button light" data-hgm-clear-row-selection>
-                            Clear Row Selection
-                        </button>
-
-                        <button type="button" class="hgm-tools-button danger" data-hgm-clear-labels>
-                            Clear All Labels
-                        </button>
+                    <div class="hgm-any-guide-item">
+                        <kbd>Ctrl</kbd> + <kbd>X</kbd>
+                        <span>Disable active Copas or Labels mode.</span>
                     </div>
 
-                    <div class="hgm-tools-info">
-                        Click one row to select it. Shift + click another row to select a row range.
-                        Save label will apply to all selected rows.
+                    <div class="hgm-any-guide-item">
+                        <kbd>Ctrl</kbd> + <kbd>C</kbd>
+                        <span>Copy selected content in Copas Mode.</span>
+                    </div>
+
+                    <div class="hgm-any-guide-item">
+                        <kbd>Click</kbd> + <kbd>Drag</kbd>
+                        <span>Select multiple table cells or visible page elements.</span>
+                    </div>
+
+                    <div class="hgm-any-guide-item">
+                        <kbd>Shift</kbd> + <kbd>Click</kbd>
+                        <span>Select table cell range like Excel.</span>
+                    </div>
+
+                    <div class="hgm-any-guide-item">
+                        <kbd>Ctrl</kbd> + <kbd>Click</kbd>
+                        <span>Add item to current selection without clearing previous selection.</span>
+                    </div>
+
+                    <div class="hgm-any-guide-warning">
+                        Labels are temporary because they are stored in sessionStorage. They usually survive page reloads in the same tab, but are cleared when the browser tab or browser session is closed.
                     </div>
                 </div>
             </div>
+        `;
 
-            ${isShortcutLauncher()
-                ? `
-                    <div class="hgm-tools-minimized-bar" data-hgm-restore>
-                        <span>☷</span>
-                        <strong>Table Tools</strong>
-                        <small>Click to restore</small>
-                    </div>
-                    `
-                : ``
-            }
+        const badge = document.createElement("div");
+        badge.id = "hgmAnyBadge";
+        badge.className = "hgm-any-badge";
+        badge.innerHTML = `
+            <span class="hgm-any-badge-dot"></span>
+            <strong id="hgmAnyBadgeText">Copas Mode</strong>
         `;
 
         const toast = document.createElement("div");
-        toast.id = "hgmToolsToast";
-        toast.className = "hgm-tools-toast";
+        toast.id = "hgmAnyToast";
+        toast.className = "hgm-any-toast";
 
         const popover = document.createElement("div");
-        popover.id = "hgmToolsLabelPopover";
-        popover.className = "hgm-label-popover";
+        popover.id = "hgmAnyLabelPopover";
+        popover.className = "hgm-any-label-popover";
         popover.innerHTML = `
-            <div class="hgm-label-popover-header">
-                <strong>Create Row Label</strong>
-                <span id="hgmActiveLotText">No row selected</span>
+            <div class="hgm-any-label-header">
+                <div>
+                    <strong>Manage Label</strong>
+                    <span id="hgmAnyLabelTargetText">Selected content</span>
+                </div>
+
+                <button type="button" class="hgm-any-label-close" data-hgm-close-label-popover>
+                    ×
+                </button>
             </div>
 
-            <div class="hgm-label-popover-body">
-                <label class="hgm-tools-label">Label Name</label>
-                <input id="hgmLabelNameInput" class="hgm-tools-input" type="text" placeholder="Example: Urgent, Hold, Recheck">
+            <div class="hgm-any-label-body">
+                <label class="hgm-any-field-label">Choose Existing Label</label>
+                <select id="hgmAnyLabelSelect" class="hgm-any-input"></select>
 
-                <label class="hgm-tools-label">Label Color</label>
-                <select id="hgmLabelColorInput" class="hgm-tools-select">
-                    <option value="blue">Blue</option>
-                    <option value="red">Red</option>
-                    <option value="yellow">Yellow</option>
-                    <option value="green">Green</option>
-                    <option value="gray">Gray</option>
-                    <option value="purple">Purple</option>
-                </select>
+                <div class="hgm-any-label-preview" id="hgmAnyLabelPreview">
+                    <span class="hgm-any-label-preview-dot"></span>
+                    <span id="hgmAnyLabelPreviewText">No label selected</span>
+                </div>
 
-                <div style="display:flex; justify-content: between; gap: 50px; margin-top: 20px;">
-                    <button type="button" class="hgm-tools-button primary" data-hgm-save-label>
-                        Save Label
+                <div class="hgm-any-label-divider"></div>
+
+                <label class="hgm-any-field-label">Create New Label</label>
+                <input
+                    id="hgmAnyNewLabelName"
+                    class="hgm-any-input"
+                    type="text"
+                    placeholder="Example: Priority, Need Review, Done">
+
+                <label class="hgm-any-field-label">Label Color</label>
+                <input
+                    id="hgmAnyNewLabelColor"
+                    class="hgm-any-input hgm-any-color-input"
+                    type="color"
+                    value="${escapeAttribute(normalizeHex(config.defaultColor))}">
+
+                <button type="button" class="hgm-any-button light" data-hgm-create-label>
+                    Create Label
+                </button>
+
+                <div class="hgm-any-label-actions">
+                    <button type="button" class="hgm-any-button primary" data-hgm-save-label>
+                        Apply Label
                     </button>
 
-                    <button type="button" class="hgm-tools-button danger" data-hgm-remove-label>
+                    <button type="button" class="hgm-any-button danger" data-hgm-remove-label>
                         Remove Label
                     </button>
                 </div>
             </div>
         `;
 
-        document.body.appendChild(panel);
+        const warning = document.createElement("div");
+        warning.id = "hgmAnyWarning";
+        warning.className = "hgm-any-warning-modal";
+        warning.innerHTML = `
+            <div class="hgm-any-warning-card">
+                <div class="hgm-any-warning-title">Temporary Labels Notice</div>
+                <div class="hgm-any-warning-text">
+                    Labels are stored only in sessionStorage. They usually remain available after page reloads in the same tab, but they are temporary and may be cleared when the browser tab or browser session is closed.
+                </div>
+
+                <button type="button" class="hgm-any-button primary" data-hgm-warning-ok>
+                    OK, I Understand
+                </button>
+            </div>
+        `;
+
+        document.body.appendChild(menu);
+        document.body.appendChild(badge);
         document.body.appendChild(toast);
         document.body.appendChild(popover);
+        document.body.appendChild(warning);
+
+        syncLabelSelectOptions();
+        syncLabelPreview();
     }
 
     function bindEvents() {
-        document.addEventListener("click", handleClick);
-        document.addEventListener("keydown", handleShortcut);
-        document.addEventListener("focusin", handleFocusIn);
-        document.addEventListener("focusout", handleFocusOut);
-
-        document.addEventListener("mousedown", handleMouseDown);
-        document.addEventListener("mouseover", handleMouseOver);
-        document.addEventListener("mouseup", handleMouseUp);
-
-        document.addEventListener("mousemove", handlePanelDragMove);
-        document.addEventListener("mouseup", handlePanelDragEnd);
-
-        window.addEventListener("resize", handleResize);
+        document.addEventListener("keydown", handleKeydown, true);
+        document.addEventListener("click", handleClick, true);
+        document.addEventListener("mousedown", handleMouseDown, true);
+        document.addEventListener("mouseover", handleMouseOver, true);
+        document.addEventListener("mouseup", handleMouseUp, true);
+        document.addEventListener("change", handleChange, true);
     }
 
     function unbindEvents() {
-        document.removeEventListener("click", handleClick);
-        document.removeEventListener("keydown", handleShortcut);
-        document.removeEventListener("focusin", handleFocusIn);
-        document.removeEventListener("focusout", handleFocusOut);
-
-        document.removeEventListener("mousedown", handleMouseDown);
-        document.removeEventListener("mouseover", handleMouseOver);
-        document.removeEventListener("mouseup", handleMouseUp);
-
-        document.removeEventListener("mousemove", handlePanelDragMove);
-        document.removeEventListener("mouseup", handlePanelDragEnd);
-
-        window.removeEventListener("resize", handleResize);
+        document.removeEventListener("keydown", handleKeydown, true);
+        document.removeEventListener("click", handleClick, true);
+        document.removeEventListener("mousedown", handleMouseDown, true);
+        document.removeEventListener("mouseover", handleMouseOver, true);
+        document.removeEventListener("mouseup", handleMouseUp, true);
+        document.removeEventListener("change", handleChange, true);
     }
 
-    function handleFocusIn(event) {
-        if (
-            event.target?.id === "hgmToolsTableSelect" ||
-            event.target?.id === "hgmToolsLabelTableSelect"
-        ) {
-            isSelectInteracting = true;
+    function handleKeydown(event) {
+        if (isTypingTarget(event.target)) return;
+
+        const key = String(event.key || "").toLowerCase();
+        const code = String(event.code || "").toLowerCase();
+        const isCtrlOrMeta = event.ctrlKey || event.metaKey;
+
+        const isOpenShortcut =
+            (isCtrlOrMeta && (key === "t" || code === "keyt")) ||
+            (event.altKey && (key === "t" || code === "keyt"));
+
+        const isCloseShortcut =
+            isCtrlOrMeta && (key === "x" || code === "keyx");
+
+        const isCopyShortcut =
+            isCtrlOrMeta && (key === "c" || code === "keyc");
+
+        if (isOpenShortcut) {
+            event.preventDefault();
+            event.stopPropagation();
+            openMenu();
+            return;
         }
-    }
 
-    function handleFocusOut(event) {
-        if (
-            event.target?.id === "hgmToolsTableSelect" ||
-            event.target?.id === "hgmToolsLabelTableSelect"
-        ) {
-            setTimeout(() => {
-                isSelectInteracting = false;
-            }, 250);
+        if (isCloseShortcut) {
+            event.preventDefault();
+            event.stopPropagation();
+            disableMode();
+            return;
         }
-    }
 
-    function handleResize() {
-        if (isShortcutLauncher()) {
-            keepPanelInsideViewport();
+        if (isCopyShortcut && activeMode === "copas") {
+            event.preventDefault();
+            event.stopPropagation();
+            copySelected();
+            return;
+        }
+
+        if (event.key === "Escape") {
+            closeMenu();
+            closeLabelPopover();
+            closeLabelWarning();
         }
     }
 
     function handleClick(event) {
         const target = event.target;
 
-        if (target.closest("[data-hgm-table-tools-trigger]")) {
-            togglePanel();
+        if (target.closest("[data-hgm-close-menu]")) {
+            event.preventDefault();
+            closeMenu();
             return;
         }
 
-        if (target.closest("#hgmToolsFab")) {
-            togglePanel();
-            return;
-        }
+        const modeButton = target.closest("[data-hgm-mode]");
+        if (modeButton) {
+            event.preventDefault();
 
-        if (target.closest("[data-hgm-close]")) {
-            closePanel();
-            return;
-        }
+            const mode = modeButton.dataset.hgmMode;
 
-        if (target.closest("[data-hgm-minimize]")) {
-            if (isShortcutLauncher()) {
-                minimizePanel();
+            if (mode === "labels") {
+                pendingModeAfterWarning = "labels";
+                closeMenu();
+                openLabelWarning();
+                return;
             }
+
+            activateMode(mode);
+            closeMenu();
             return;
         }
 
-        if (target.closest("[data-hgm-restore]")) {
-            if (isShortcutLauncher()) {
-                restorePanel();
-            }
+        if (target.closest("[data-hgm-guide]")) {
+            event.preventDefault();
+            openGuideView();
             return;
         }
 
-        const openButton = target.closest("[data-hgm-open]");
-        if (openButton) {
-            restorePanel();
-            openView(openButton.dataset.hgmOpen);
+        if (target.closest("[data-hgm-guide-back]")) {
+            event.preventDefault();
+            backToMainView();
             return;
         }
 
-        if (target.closest("[data-hgm-copy-mode]")) {
-            toggleCopyMode();
-            return;
-        }
-
-        if (target.closest("[data-hgm-copy-selected]")) {
-            copySelectedCells();
-            return;
-        }
-
-        if (target.closest("[data-hgm-clear-selection]")) {
-            clearSelection();
-            return;
-        }
-
-        if (target.closest("[data-hgm-label-mode]")) {
-            toggleLabelMode();
-            return;
-        }
-
-        if (target.closest("[data-hgm-refresh-labels]")) {
-            renderStoredLabels();
-            showToast("Labels refreshed.");
-            return;
-        }
-
-        if (target.closest("[data-hgm-clear-row-selection]")) {
-            clearRowSelection();
-            return;
-        }
-
-        if (target.closest("[data-hgm-clear-labels]")) {
-            clearAllLabels();
+        if (target.closest("[data-hgm-warning-ok]")) {
+            event.preventDefault();
+            confirmLabelWarning();
             return;
         }
 
         if (target.closest("[data-hgm-save-label]")) {
+            event.preventDefault();
             saveActiveLabel();
             return;
         }
 
         if (target.closest("[data-hgm-remove-label]")) {
+            event.preventDefault();
             removeActiveLabel();
             return;
         }
 
-        if (labelMode) {
-            const row = target.closest("tbody tr");
-            const table = target.closest("table");
-
-            if (row && table && isUsableTable(table) && isSelectedLabelTable(table)) {
-                event.preventDefault();
-                handleRowLabelSelection(row, event);
-                return;
-            }
-        }
-
-        const panel = document.getElementById("hgmToolsPanel");
-        const popover = document.getElementById("hgmToolsLabelPopover");
-
-        if (
-            panel?.classList.contains("is-open") &&
-            !target.closest("#hgmToolsPanel") &&
-            !target.closest("#hgmToolsFab") &&
-            !target.closest("[data-hgm-table-tools-trigger]")
-        ) {
-            closePanel();
-        }
-
-        if (
-            popover?.classList.contains("is-open") &&
-            !target.closest("#hgmToolsLabelPopover")
-        ) {
+        if (target.closest("[data-hgm-close-label-popover]")) {
+            event.preventDefault();
             closeLabelPopover();
+            return;
+        }
+
+        if (target.closest("[data-hgm-create-label]")) {
+            event.preventDefault();
+            createNewLabelOption();
+            return;
+        }
+
+        if (isInsideTools(target)) return;
+
+        if (activeMode === "labels") {
+            handleLabelClick(event);
+            return;
+        }
+
+        if (!activeMode) {
+            const menu = document.getElementById("hgmAnyMenu");
+
+            if (
+                menu?.classList.contains("is-open") &&
+                !target.closest("#hgmAnyMenu")
+            ) {
+                closeMenu();
+            }
         }
     }
 
     function handleMouseDown(event) {
-        const dragHandle = event.target.closest("[data-hgm-drag-handle]");
+        if (activeMode !== "copas") return;
+        if (isInsideTools(event.target)) return;
+        if (isTypingTarget(event.target)) return;
 
-        if (
-            isShortcutLauncher() &&
-            dragHandle &&
-            event.target.closest("#hgmToolsPanel")
-        ) {
-            if (
-                event.target.closest("button") ||
-                event.target.closest("input") ||
-                event.target.closest("select") ||
-                event.target.closest("textarea")
-            ) {
+        const target = getSelectableTarget(event.target);
+        if (!target) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const cell = getCellTarget(target);
+
+        if (!event.ctrlKey && !event.metaKey && !event.shiftKey) {
+            clearSelection(false);
+        }
+
+        if (cell) {
+            if (event.shiftKey && anchorCell && isSameTable(anchorCell, cell)) {
+                selectCellRange(anchorCell, cell, event.ctrlKey || event.metaKey);
+                showToast(`${selectedMap.size} item selected. Press Ctrl + C to copy.`);
                 return;
             }
 
-            startPanelDrag(event);
+            anchorCell = cell;
+            isDragging = true;
+            addSelection(cell);
+
+            showToast(`${selectedMap.size} item selected. Press Ctrl + C to copy.`);
             return;
         }
 
-        if (!copyMode) return;
+        isDragging = true;
+        addSelection(target);
 
-        const cell = event.target.closest("td, th");
-        const table = event.target.closest("table");
-
-        if (!cell || !table) return;
-        if (!isUsableTable(table) || !isSelectedCopyTable(table)) return;
-        if (!isVisibleCell(cell)) return;
-
-        event.preventDefault();
-
-        if (cell.matches("th")) {
-            selectColumnByHeader(cell);
-            return;
-        }
-
-        if (event.altKey) {
-            selectRowByCell(cell);
-            return;
-        }
-
-        if (event.shiftKey && copyAnchorCell) {
-            copyCurrentCell = cell;
-            selectCellRange(copyAnchorCell, copyCurrentCell);
-            return;
-        }
-
-        isMouseSelecting = true;
-        copyAnchorCell = cell;
-        copyCurrentCell = cell;
-
-        clearSelection(false);
-        selectCellRange(copyAnchorCell, copyCurrentCell);
+        showToast(`${selectedMap.size} item selected. Press Ctrl + C to copy.`);
     }
 
     function handleMouseOver(event) {
-        if (!copyMode || !isMouseSelecting) return;
+        if (activeMode !== "copas") return;
+        if (!isDragging) return;
+        if (isInsideTools(event.target)) return;
 
-        const cell = event.target.closest("td, th");
-        const table = event.target.closest("table");
+        const target = getSelectableTarget(event.target);
+        if (!target) return;
 
-        if (!cell || !table) return;
-        if (!isUsableTable(table) || !isSelectedCopyTable(table)) return;
-        if (cell.matches("th")) return;
-        if (!isSameTable(copyAnchorCell, cell)) return;
+        const cell = getCellTarget(target);
 
-        copyCurrentCell = cell;
-        selectCellRange(copyAnchorCell, copyCurrentCell);
+        if (anchorCell && cell && isSameTable(anchorCell, cell)) {
+            selectCellRange(anchorCell, cell, false);
+            return;
+        }
+
+        if (!cell) {
+            addSelection(target);
+        }
     }
 
     function handleMouseUp() {
-        if (!copyMode) return;
+        if (activeMode !== "copas") return;
 
-        if (isMouseSelecting) {
-            isMouseSelecting = false;
-            showToast(`${selectedCellMap.size} cell(s) selected.`);
+        if (isDragging) {
+            isDragging = false;
+            showToast(`${selectedMap.size} item selected. Press Ctrl + C to copy.`);
         }
     }
 
-    function handleShortcut(event) {
-        const key = String(event.key || "").toUpperCase();
-
-        const launcherKey = String(config.shortcut.key || "T").toUpperCase();
-        const launcherCtrlOk = config.shortcut.ctrl ? event.ctrlKey || event.metaKey : true;
-        const launcherShiftOk = config.shortcut.shift ? event.shiftKey : true;
-
-        if (launcherCtrlOk && launcherShiftOk && key === launcherKey) {
-            event.preventDefault();
-            togglePanel();
-            return;
-        }
-
-        const copyKey = String(config.copyShortcut.key || "C").toUpperCase();
-        const copyCtrlOk = config.copyShortcut.ctrl ? event.ctrlKey || event.metaKey : true;
-        const copyShiftOk = config.copyShortcut.shift ? event.shiftKey : true;
-
-        if (copyCtrlOk && copyShiftOk && key === copyKey && copyMode && selectedCellMap.size) {
-            event.preventDefault();
-            copySelectedCells();
-            return;
-        }
-
-        if (event.key === "Escape") {
-            closePanel();
-            closeLabelPopover();
-            clearSelection(false);
-            clearRowSelection(false);
+    function handleChange(event) {
+        if (event.target?.id === "hgmAnyLabelSelect") {
+            syncLabelPreview();
         }
     }
 
-    function startPanelDrag(event) {
-        const panel = document.getElementById("hgmToolsPanel");
-        if (!panel) return;
-
-        if (!isShortcutLauncher()) return;
-
-        restorePanel();
-
-        const rect = panel.getBoundingClientRect();
-
-        isPanelDragging = true;
-        panelDragOffsetX = event.clientX - rect.left;
-        panelDragOffsetY = event.clientY - rect.top;
-        panelHasCustomPosition = true;
-
-        panel.classList.add("is-dragging");
-        panel.style.left = `${rect.left}px`;
-        panel.style.top = `${rect.top}px`;
-        panel.style.right = "auto";
-        panel.style.bottom = "auto";
-
-        event.preventDefault();
-    }
-
-    function handlePanelDragMove(event) {
-        if (!isShortcutLauncher()) return;
-        if (!isPanelDragging) return;
-
-        const panel = document.getElementById("hgmToolsPanel");
-        if (!panel) return;
-
-        const panelWidth = panel.offsetWidth;
-        const panelHeight = panel.offsetHeight;
-
-        const margin = 10;
-
-        let left = event.clientX - panelDragOffsetX;
-        let top = event.clientY - panelDragOffsetY;
-
-        left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
-        top = Math.max(margin, Math.min(top, window.innerHeight - panelHeight - margin));
-
-        panel.style.left = `${left}px`;
-        panel.style.top = `${top}px`;
-        panel.style.right = "auto";
-        panel.style.bottom = "auto";
-    }
-
-    function handlePanelDragEnd() {
-        if (!isPanelDragging) return;
-
-        const panel = document.getElementById("hgmToolsPanel");
-        if (panel) {
-            panel.classList.remove("is-dragging");
-        }
-
-        isPanelDragging = false;
-    }
-
-    function keepPanelInsideViewport() {
-        const panel = document.getElementById("hgmToolsPanel");
-        if (!panel || !panelHasCustomPosition) return;
-
-        const rect = panel.getBoundingClientRect();
-        const margin = 10;
-
-        let left = rect.left;
-        let top = rect.top;
-
-        left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin));
-        top = Math.max(margin, Math.min(top, window.innerHeight - rect.height - margin));
-
-        panel.style.left = `${left}px`;
-        panel.style.top = `${top}px`;
-    }
-
-    function minimizePanel() {
-        if (!isShortcutLauncher()) return;
-
-        const panel = document.getElementById("hgmToolsPanel");
-        if (!panel) return;
-
-        panelMinimized = true;
-        panel.classList.add("is-minimized");
-        panel.classList.add("is-open");
-        panelOpen = true;
-
+    function openMenu() {
         closeLabelPopover();
+        closeLabelWarning();
+
+        const menu = document.getElementById("hgmAnyMenu");
+        if (!menu) return;
+
+        backToMainView();
+        menu.classList.add("is-open");
+        showToast("Mode chooser opened.");
     }
 
-    function restorePanel() {
-        const panel = document.getElementById("hgmToolsPanel");
-        if (!panel) return;
-
-        panelMinimized = false;
-        panel.classList.remove("is-minimized");
-        panel.classList.add("is-open");
-        panelOpen = true;
-
-        refreshTableList();
+    function closeMenu() {
+        document.getElementById("hgmAnyMenu")?.classList.remove("is-open");
+        backToMainView();
     }
 
-    function togglePanel() {
-        if (!isSelectInteracting) {
-            refreshTableList();
+    function openGuideView() {
+        const menu = document.getElementById("hgmAnyMenu");
+        const mainView = document.querySelector("[data-hgm-main-view]");
+        const guideView = document.querySelector("[data-hgm-guide-view]");
+
+        if (!menu || !mainView || !guideView) return;
+
+        menu.classList.add("is-guide-mode");
+        mainView.classList.add("is-hidden");
+        guideView.classList.add("is-open");
+    }
+
+    function backToMainView() {
+        const menu = document.getElementById("hgmAnyMenu");
+        const mainView = document.querySelector("[data-hgm-main-view]");
+        const guideView = document.querySelector("[data-hgm-guide-view]");
+
+        if (!menu || !mainView || !guideView) return;
+
+        menu.classList.remove("is-guide-mode");
+        mainView.classList.remove("is-hidden");
+        guideView.classList.remove("is-open");
+    }
+
+    function openLabelWarning() {
+        const warning = document.getElementById("hgmAnyWarning");
+        if (!warning) return;
+
+        warning.classList.add("is-open");
+    }
+
+    function closeLabelWarning() {
+        document.getElementById("hgmAnyWarning")?.classList.remove("is-open");
+    }
+
+    function confirmLabelWarning() {
+        closeLabelWarning();
+
+        if (pendingModeAfterWarning) {
+            activateMode(pendingModeAfterWarning);
+            pendingModeAfterWarning = null;
         }
+    }
 
-        const panel = document.getElementById("hgmToolsPanel");
-        if (!panel) return;
+    function activateMode(mode) {
+        if (!["copas", "labels"].includes(mode)) return;
 
-        if (isShortcutLauncher() && panelMinimized) {
-            restorePanel();
+        activeMode = mode;
+
+        document.body.classList.toggle("hgm-any-copas-active", mode === "copas");
+        document.body.classList.toggle("hgm-any-labels-active", mode === "labels");
+
+        clearSelection(false);
+        closeLabelPopover();
+        updateBadge();
+
+        showToast(mode === "copas" ? "Copas Mode enabled." : "Labels Mode enabled.");
+    }
+
+    function disableMode() {
+        activeMode = null;
+        isDragging = false;
+        anchorCell = null;
+        pendingModeAfterWarning = null;
+
+        document.body.classList.remove("hgm-any-copas-active");
+        document.body.classList.remove("hgm-any-labels-active");
+
+        clearSelection(false);
+        closeLabelPopover();
+        closeLabelWarning();
+        updateBadge();
+
+        showToast("Mode disabled.");
+    }
+
+    function updateBadge() {
+        const badge = document.getElementById("hgmAnyBadge");
+        const text = document.getElementById("hgmAnyBadgeText");
+
+        if (!badge || !text) return;
+
+        if (!activeMode) {
+            badge.classList.remove("is-open");
             return;
         }
 
-        panelOpen = !panelOpen;
-        panel.classList.toggle("is-open", panelOpen);
-
-        if (panelOpen) {
-            panel.classList.remove("is-minimized");
-            panelMinimized = false;
-        }
+        text.textContent = activeMode === "copas" ? "Copas Mode" : "Labels Mode";
+        badge.classList.add("is-open");
     }
 
-    function closePanel() {
-        panelOpen = false;
-        panelMinimized = false;
+    function getSelectableTarget(target) {
+        if (!target || target.nodeType !== 1) return null;
+        if (target.closest(config.ignoreSelector)) return null;
 
-        const panel = document.getElementById("hgmToolsPanel");
-        if (!panel) return;
+        const cell = target.closest("td, th");
 
-        panel.classList.remove("is-open");
-        panel.classList.remove("is-minimized");
-    }
-
-    function openView(view) {
-        activeView = view || "home";
-
-        if (!isSelectInteracting) {
-            refreshTableList();
+        if (cell && !isInsideTools(cell)) {
+            return cell;
         }
 
-        document.querySelectorAll("[data-hgm-view]").forEach((element) => {
-            element.classList.toggle(
-                "is-active",
-                element.dataset.hgmView === activeView
-            );
-        });
-    }
+        let element = target.closest(config.selector);
 
-    function startAutoDetection() {
-        safeRefreshTables();
-
-        autoDetectTimer = setInterval(() => {
-            safeRefreshTables();
-        }, config.autoDetectInterval);
-
-        autoDetectStopTimer = setTimeout(() => {
-            if (autoDetectTimer) {
-                clearInterval(autoDetectTimer);
-                autoDetectTimer = null;
-            }
-        }, config.autoDetectDuration);
-
-        if ("MutationObserver" in window) {
-            observer = new MutationObserver(debounce(() => {
-                safeRefreshTables();
-            }, 250));
-
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-        }
-    }
-
-    function stopAutoDetection() {
-        if (autoDetectTimer) {
-            clearInterval(autoDetectTimer);
-            autoDetectTimer = null;
+        if (!element) {
+            element = target;
         }
 
-        if (autoDetectStopTimer) {
-            clearTimeout(autoDetectStopTimer);
-            autoDetectStopTimer = null;
+        if (!element || element === document.body || element === document.documentElement) {
+            return null;
         }
 
-        if (observer) {
-            observer.disconnect();
-            observer = null;
+        if (isInsideTools(element)) return null;
+
+        const rect = element.getBoundingClientRect();
+
+        if (rect.width <= 0 || rect.height <= 0) {
+            return null;
         }
+
+        const text = cleanElementText(element);
+        const hasUsefulContent =
+            text ||
+            element.getAttribute("aria-label") ||
+            element.getAttribute("title") ||
+            element.value;
+
+        if (!hasUsefulContent) return null;
+
+        return element;
     }
 
-    function safeRefreshTables() {
-        if (refreshLocked) return;
-        if (isSelectInteracting) return;
+    function getCellTarget(element) {
+        if (!element) return null;
 
-        const tables = getTables();
-        const signature = getTableSignature(tables);
+        if (element.matches?.("td, th")) {
+            return element;
+        }
 
-        if (signature === lastTableSignature) return;
-
-        refreshLocked = true;
-        lastTableSignature = signature;
-
-        refreshTableList();
-        renderStoredLabels();
-
-        setTimeout(() => {
-            refreshLocked = false;
-        }, 120);
+        return element.closest?.("td, th") || null;
     }
 
-    function getTableSignature(tables) {
-        return tables
-            .map((table, index) => {
-                const rowCount = table.querySelectorAll("tr").length;
-                const cellCount = table.querySelectorAll("td, th").length;
-                const title = getNearestReadableTitle(table) || "";
-                return `${index}:${title}:${rowCount}:${cellCount}`;
-            })
-            .join("|");
-    }
+    function addSelection(element) {
+        const key = getSelectionKey(element);
 
-    function refreshTableList() {
-        const tables = getTables();
-
-        syncTableSelect("hgmToolsTableSelect", tables);
-        syncTableSelect("hgmToolsLabelTableSelect", tables);
-    }
-
-    function syncTableSelect(selectId, tables) {
-        const select = document.getElementById(selectId);
-        if (!select) return;
-
-        if (document.activeElement === select || isSelectInteracting) return;
-
-        const currentValue = select.value;
-
-        const nextOptions = tables.map((table, index) => {
-            ensureTableId(table, index);
-
-            return {
-                value: table.dataset.hgmTableUid,
-                text: getTableLabel(table, index)
-            };
+        selectedMap.set(key, {
+            key,
+            element,
+            text: cleanElementText(element),
+            type: element.matches?.("td, th") ? "cell" : "generic",
+            meta: element.matches?.("td, th") ? getCellMeta(element) : null
         });
 
-        const currentSignature = Array.from(select.options)
-            .map((option) => `${option.value}:${option.textContent}`)
-            .join("|");
-
-        const nextSignature = nextOptions
-            .map((option) => `${option.value}:${option.text}`)
-            .join("|");
-
-        if (currentSignature === nextSignature) return;
-
-        select.innerHTML = "";
-
-        if (!nextOptions.length) {
-            const option = document.createElement("option");
-            option.value = "";
-            option.textContent = "No table detected";
-            select.appendChild(option);
-            return;
-        }
-
-        nextOptions.forEach((item) => {
-            const option = document.createElement("option");
-            option.value = item.value;
-            option.textContent = item.text;
-            select.appendChild(option);
-        });
-
-        if (currentValue && nextOptions.some((item) => item.value === currentValue)) {
-            select.value = currentValue;
-        }
+        element.classList.add("hgm-any-selected");
     }
 
-    function getTables() {
-        return Array.from(document.querySelectorAll(config.tableSelector || "table"))
-            .filter(isUsableTable)
-            .map((table, index) => {
-                ensureTableId(table, index);
-                return table;
-            });
-    }
-
-    function isUsableTable(table) {
-        if (!table) return false;
-
-        if (table.closest("#hgmToolsPanel")) return false;
-        if (table.closest("#hgmToolsLabelPopover")) return false;
-
-        const rows = table.querySelectorAll("tr");
-        const cells = table.querySelectorAll("td, th");
-
-        if (rows.length < 1) return false;
-        if (cells.length < 2) return false;
-
-        const style = window.getComputedStyle(table);
-        if (style.display === "none" || style.visibility === "hidden") return false;
-
-        return true;
-    }
-
-    function ensureTableId(table, index) {
-        if (!table.dataset.hgmTableUid) {
-            const label = getNearestReadableTitle(table) || `table-${index + 1}`;
-            const safeLabel = slugify(label).slice(0, 48) || `table-${index + 1}`;
-
-            table.dataset.hgmTableUid = `hgm-${safeLabel}-${index + 1}`;
-        }
-    }
-
-    function getSelectedCopyTable() {
-        return getTableFromSelect("hgmToolsTableSelect");
-    }
-
-    function getSelectedLabelTable() {
-        return getTableFromSelect("hgmToolsLabelTableSelect");
-    }
-
-    function getTableFromSelect(selectId) {
-        const select = document.getElementById(selectId);
-        const tables = getTables();
-
-        if (!tables.length) return null;
-
-        if (!select || !select.value) return tables[0];
-
-        return tables.find((table) => table.dataset.hgmTableUid === select.value) || tables[0];
-    }
-
-    function isSelectedCopyTable(table) {
-        const selected = getSelectedCopyTable();
-        return selected ? table === selected : true;
-    }
-
-    function isSelectedLabelTable(table) {
-        const selected = getSelectedLabelTable();
-        return selected ? table === selected : true;
-    }
-
-    function getTableLabel(table, index) {
-        const readableTitle = getNearestReadableTitle(table);
-
-        if (readableTitle) return `${index + 1}. ${readableTitle}`;
-
-        const headers = getHeaderTexts(table);
-        if (headers.length) return `${index + 1}. ${headers.slice(0, 3).join(" / ")}`;
-
-        return `${index + 1}. Auto-detected table`;
-    }
-
-    function getNearestReadableTitle(table) {
-        const section = table.closest("section, article, .card, .grid-section, .hagegrid, .hgm-grid");
-
-        const titleSelector = [
-            ".section-label",
-            ".title",
-            ".grid-title",
-            ".hagegrid-title",
-            ".card-title",
-            "h1",
-            "h2",
-            "h3",
-            "h4",
-            "caption"
-        ].join(",");
-
-        const localTitle = section?.querySelector(titleSelector);
-        if (localTitle) {
-            const text = normalize(localTitle.innerText);
-            if (text) return text;
-        }
-
-        const caption = table.querySelector("caption");
-        if (caption) {
-            const text = normalize(caption.innerText);
-            if (text) return text;
-        }
-
-        const parentWithId = table.closest("[id]");
-        if (parentWithId?.id) return parentWithId.id;
-
-        if (table.id) return table.id;
-
-        return "";
-    }
-
-    function getHeaderTexts(table) {
-        const headerCells = table.querySelectorAll("thead th");
-
-        if (headerCells.length) {
-            return Array.from(headerCells)
-                .map((th) => normalize(th.innerText))
-                .filter(Boolean);
-        }
-
-        const firstRowCells = table.querySelectorAll("tr:first-child th, tr:first-child td");
-
-        return Array.from(firstRowCells)
-            .map((cell) => normalize(cell.innerText))
-            .filter(Boolean);
-    }
-
-    function toggleCopyMode() {
-        copyMode = !copyMode;
-
-        if (copyMode && labelMode) {
-            toggleLabelMode(false);
-        }
-
-        document.body.classList.toggle("hgm-copy-mode-active", copyMode);
-
-        const button = document.querySelector("[data-hgm-copy-mode]");
-        if (button) {
-            button.textContent = copyMode
-                ? "Disable Selection Mode"
-                : "Enable Selection Mode";
-        }
-
-        if (copyMode && isShortcutLauncher()) {
-            minimizePanel();
-        }
-
-        showToast(copyMode ? "Selection mode enabled." : "Selection mode disabled.");
-    }
-
-    function toggleLabelMode(forceValue = null) {
-        labelMode = forceValue === null ? !labelMode : Boolean(forceValue);
-
-        if (labelMode && copyMode) {
-            toggleCopyMode();
-        }
-
-        document.body.classList.toggle("hgm-label-mode-active", labelMode);
-
-        const button = document.querySelector("[data-hgm-label-mode]");
-        if (button) {
-            button.textContent = labelMode
-                ? "Disable Row Label Mode"
-                : "Enable Row Label Mode";
-        }
-
-        if (labelMode && isShortcutLauncher()) {
-            minimizePanel();
-        }
-
-        showToast(labelMode ? "Row label mode enabled." : "Row label mode disabled.");
-    }
-
-    function selectCellRange(startCell, endCell) {
+    function selectCellRange(startCell, endCell, append = false) {
         if (!startCell || !endCell) return;
         if (!isSameTable(startCell, endCell)) return;
 
-        clearSelection(false);
+        if (!append) {
+            clearSelection(false);
+        }
 
         const table = startCell.closest("table");
         const start = getCellPosition(startCell);
@@ -1100,114 +700,426 @@ export function createTableTools(options = {}) {
 
             cells.forEach((cell, colIndex) => {
                 if (colIndex < minCol || colIndex > maxCol) return;
-                addCellToSelection(cell);
+
+                addSelection(cell);
             });
         });
     }
 
-    function selectColumnByHeader(headerCell) {
-        const table = headerCell.closest("table");
-        const position = getCellPosition(headerCell);
-
-        clearSelection(false);
-        copyAnchorCell = headerCell;
-
-        const rows = Array.from(table.querySelectorAll("tr"));
-
-        rows.forEach((row) => {
-            const cells = getVisibleCells(row);
-            const cell = cells[position.colIndex];
-
-            if (cell) addCellToSelection(cell);
+    function clearSelection(show = true) {
+        selectedMap.forEach((item) => {
+            item.element.classList.remove("hgm-any-selected");
         });
 
-        showToast(`Column selected: ${selectedCellMap.size} cell(s).`);
-    }
+        selectedMap.clear();
 
-    function selectRowByCell(cell) {
-        const row = cell.closest("tr");
-
-        clearSelection(false);
-        copyAnchorCell = cell;
-
-        getVisibleCells(row).forEach(addCellToSelection);
-
-        showToast(`Row selected: ${selectedCellMap.size} cell(s).`);
-    }
-
-    function addCellToSelection(cell) {
-        if (!cell || !isVisibleCell(cell)) return;
-
-        const meta = getCellMeta(cell);
-        const key = meta.key;
-
-        selectedCellMap.set(key, {
-            cell,
-            meta
+        document.querySelectorAll(".hgm-any-label-target").forEach((element) => {
+            element.classList.remove("hgm-any-label-target");
         });
 
-        cell.classList.add("hgm-selected-cell");
+        if (show) {
+            showToast("Selection cleared.");
+        }
     }
 
-    async function copySelectedCells() {
-        if (!selectedCellMap.size) {
-            showToast("No cells selected.");
+    async function copySelected() {
+        if (!selectedMap.size) {
+            showToast("No item selected.");
             return;
         }
 
-        const matrix = buildSelectedMatrix();
-        const tsv = matrixToTsv(matrix);
-        const html = matrixToHtml(matrix);
+        const items = Array.from(selectedMap.values());
+        const onlyCells = items.length > 0 && items.every((item) => item.type === "cell");
+
+        const text = onlyCells ? buildCellTsv(items) : buildGenericText(items);
+
+        if (!text) {
+            showToast("Selected item has no readable text.");
+            return;
+        }
 
         try {
-            if (navigator.clipboard && window.ClipboardItem) {
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        "text/html": new Blob([html], { type: "text/html" }),
-                        "text/plain": new Blob([tsv], { type: "text/plain" })
-                    })
-                ]);
-            } else if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(tsv);
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
             } else {
-                fallbackCopy(tsv);
+                fallbackCopy(text);
             }
 
-            showToast("Selected cells copied.");
+            showToast("Copied successfully.");
         } catch {
-            fallbackCopy(tsv);
-            showToast("Selected cells copied.");
+            fallbackCopy(text);
+            showToast("Copied successfully.");
         }
     }
 
-    function buildSelectedMatrix() {
-        const items = Array.from(selectedCellMap.values())
+    function buildGenericText(items) {
+        return items
+            .map((item) => item.text)
+            .filter(Boolean)
+            .join("\n");
+    }
+
+    function buildCellTsv(items) {
+        const metas = items
             .map((item) => item.meta)
+            .filter(Boolean)
             .sort((a, b) => {
                 if (a.tableIndex !== b.tableIndex) return a.tableIndex - b.tableIndex;
                 if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
                 return a.colIndex - b.colIndex;
             });
 
-        const rowKeys = [...new Set(items.map((item) => `${item.tableIndex}:${item.rowIndex}`))];
-        const colIndexes = [...new Set(items.map((item) => item.colIndex))];
+        const rowKeys = [...new Set(metas.map((meta) => `${meta.tableIndex}:${meta.rowIndex}`))];
+        const colKeys = [...new Set(metas.map((meta) => meta.colIndex))].sort((a, b) => a - b);
 
         const rowMap = new Map(rowKeys.map((value, index) => [value, index]));
-        const colMap = new Map(colIndexes.map((value, index) => [value, index]));
+        const colMap = new Map(colKeys.map((value, index) => [value, index]));
 
         const matrix = Array.from({ length: rowKeys.length }, () =>
-            Array.from({ length: colIndexes.length }, () => "")
+            Array.from({ length: colKeys.length }, () => "")
         );
 
-        items.forEach((item) => {
-            const rowKey = `${item.tableIndex}:${item.rowIndex}`;
+        metas.forEach((meta) => {
+            const rowKey = `${meta.tableIndex}:${meta.rowIndex}`;
             const r = rowMap.get(rowKey);
-            const c = colMap.get(item.colIndex);
+            const c = colMap.get(meta.colIndex);
 
-            matrix[r][c] = item.value;
+            matrix[r][c] = meta.text;
         });
 
-        return matrix;
+        return matrix
+            .map((row) =>
+                row
+                    .map((value) =>
+                        String(value || "")
+                            .replace(/\t/g, " ")
+                            .replace(/\r?\n/g, " ")
+                            .trim()
+                    )
+                    .join("\t")
+            )
+            .join("\n");
+    }
+
+    function handleLabelClick(event) {
+        if (isInsideTools(event.target)) return;
+        if (isTypingTarget(event.target)) return;
+
+        const target = getSelectableTarget(event.target);
+
+        if (!target) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        activeLabelTarget = target;
+
+        document.querySelectorAll(".hgm-any-label-target").forEach((element) => {
+            element.classList.remove("hgm-any-label-target");
+        });
+
+        target.classList.add("hgm-any-label-target");
+
+        openLabelPopover(target);
+    }
+
+    function openLabelPopover(target) {
+        syncLabelSelectOptions();
+
+        const options = getLabelOptions();
+
+        const popover = document.getElementById("hgmAnyLabelPopover");
+        const targetText = document.getElementById("hgmAnyLabelTargetText");
+        const select = document.getElementById("hgmAnyLabelSelect");
+
+        if (!popover || !target || !select) return;
+
+        const key = getElementStorageKey(target);
+        const labels = getStoredLabels();
+        const existing = labels[key];
+
+        if (targetText) {
+            const text = cleanElementText(target);
+            targetText.textContent = text ? text.slice(0, 58) : "Selected content";
+        }
+
+        if (existing && options.length) {
+            const index = options.findIndex((label) => {
+                return label.name === existing.name &&
+                    normalizeHex(label.color) === normalizeHex(existing.color);
+            });
+
+            select.value = index >= 0 ? String(index) : "";
+        } else {
+            select.value = options.length ? "0" : "";
+        }
+
+        syncLabelPreview();
+
+        const rect = target.getBoundingClientRect();
+        const width = 320;
+        const height = 390;
+        const margin = 14;
+
+        let left = rect.left + window.scrollX + 16;
+        let top = rect.bottom + window.scrollY + 12;
+
+        const minLeft = window.scrollX + margin;
+        const maxLeft = window.scrollX + window.innerWidth - width - margin;
+
+        if (left > maxLeft) {
+            left = maxLeft;
+        }
+
+        if (left < minLeft) {
+            left = minLeft;
+        }
+
+        const viewportBottom = window.scrollY + window.innerHeight - margin;
+
+        if (top + height > viewportBottom) {
+            top = rect.top + window.scrollY - height - 12;
+        }
+
+        if (top < window.scrollY + margin) {
+            top = window.scrollY + margin;
+        }
+
+        popover.style.position = "absolute";
+        popover.style.left = `${left}px`;
+        popover.style.top = `${top}px`;
+        popover.classList.add("is-open");
+    }
+
+    function closeLabelPopover() {
+        document.getElementById("hgmAnyLabelPopover")?.classList.remove("is-open");
+
+        document.querySelectorAll(".hgm-any-label-target").forEach((element) => {
+            element.classList.remove("hgm-any-label-target");
+        });
+
+        activeLabelTarget = null;
+    }
+
+    function saveActiveLabel() {
+        if (!activeLabelTarget) {
+            showToast("No selected content.");
+            return;
+        }
+
+        const options = getLabelOptions();
+        const select = document.getElementById("hgmAnyLabelSelect");
+
+        if (!options.length || !select || select.value === "") {
+            showToast("Please create or choose a label first.");
+            return;
+        }
+
+        const selected = options[Number(select.value)];
+
+        if (!selected) {
+            showToast("Please choose an existing label.");
+            return;
+        }
+
+        const labels = getStoredLabels();
+        const key = getElementStorageKey(activeLabelTarget);
+
+        labels[key] = {
+            name: selected.name,
+            color: normalizeHex(selected.color),
+            updatedAt: new Date().toISOString()
+        };
+
+        saveStoredLabels(labels);
+        renderStoredLabels();
+        closeLabelPopover();
+
+        showToast("Label applied.");
+    }
+
+    function removeActiveLabel() {
+        if (!activeLabelTarget) return;
+
+        const labels = getStoredLabels();
+        const key = getElementStorageKey(activeLabelTarget);
+
+        delete labels[key];
+
+        saveStoredLabels(labels);
+        renderStoredLabels();
+        closeLabelPopover();
+
+        showToast("Label removed.");
+    }
+
+    function renderStoredLabels() {
+        clearRenderedLabels();
+
+        const labels = getStoredLabels();
+
+        Object.keys(labels).forEach((key) => {
+            const element = findElementByStorageKey(key);
+
+            if (!element) return;
+
+            renderLabel(element, labels[key]);
+        });
+    }
+
+    function clearRenderedLabels() {
+        document.querySelectorAll(".hgm-any-label").forEach((label) => {
+            label.remove();
+        });
+
+        document.querySelectorAll("[data-hgm-any-label-color]").forEach((element) => {
+            element.removeAttribute("data-hgm-any-label-color");
+            element.style.removeProperty("--hgm-any-label-color");
+        });
+    }
+
+    function renderLabel(element, label) {
+        const color = normalizeHex(label.color || config.defaultColor);
+
+        element.setAttribute("data-hgm-any-label-color", color);
+        element.style.setProperty("--hgm-any-label-color", color);
+
+        const badge = document.createElement("span");
+        badge.className = "hgm-any-label";
+        badge.style.setProperty("--hgm-any-label-color", color);
+        badge.textContent = label.name;
+
+        element.appendChild(badge);
+    }
+
+    function labelCatalogKey() {
+        return `${storageKey()}:catalog`;
+    }
+
+    function getLabelOptions() {
+        try {
+            const raw = sessionStorage.getItem(labelCatalogKey());
+            const saved = raw ? JSON.parse(raw) : [];
+
+            if (Array.isArray(saved) && saved.length) {
+                return saved
+                    .map((item) => ({
+                        name: normalize(item.name || ""),
+                        color: normalizeHex(item.color || config.defaultColor)
+                    }))
+                    .filter((item) => item.name);
+            }
+        } catch {
+            return [];
+        }
+
+        return [];
+    }
+
+    function saveLabelOptions(labels) {
+        try {
+            sessionStorage.setItem(labelCatalogKey(), JSON.stringify(labels || []));
+        } catch {
+            showToast("Storage is full or disabled.");
+        }
+    }
+
+    function labelNameExists(name) {
+        const targetName = normalize(name).toLowerCase();
+
+        return getLabelOptions().some((item) => {
+            return normalize(item.name).toLowerCase() === targetName;
+        });
+    }
+
+    function createNewLabelOption() {
+        const nameInput = document.getElementById("hgmAnyNewLabelName");
+        const colorInput = document.getElementById("hgmAnyNewLabelColor");
+
+        const name = normalize(nameInput?.value || "");
+        const color = normalizeHex(colorInput?.value || config.defaultColor);
+
+        if (!name) {
+            showToast("Please enter a label name.");
+            return;
+        }
+
+        if (labelNameExists(name)) {
+            showToast("This label name already exists.");
+            return;
+        }
+
+        const labels = getLabelOptions();
+
+        labels.push({
+            name,
+            color,
+            createdAt: new Date().toISOString()
+        });
+
+        saveLabelOptions(labels);
+        syncLabelSelectOptions();
+
+        const select = document.getElementById("hgmAnyLabelSelect");
+        if (select) {
+            select.value = String(labels.length - 1);
+        }
+
+        if (nameInput) {
+            nameInput.value = "";
+        }
+
+        syncLabelPreview();
+        showToast("Label created and saved temporarily.");
+    }
+
+    function syncLabelSelectOptions() {
+        const select = document.getElementById("hgmAnyLabelSelect");
+        if (!select) return;
+
+        const labels = getLabelOptions();
+        const previousValue = select.value;
+
+        select.innerHTML = "";
+
+        if (!labels.length) {
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "No label created yet";
+            select.appendChild(option);
+            return;
+        }
+
+        labels.forEach((label, index) => {
+            const option = document.createElement("option");
+            option.value = String(index);
+            option.textContent = `${label.name} — ${label.color}`;
+            select.appendChild(option);
+        });
+
+        if (previousValue && Number(previousValue) < labels.length) {
+            select.value = previousValue;
+        }
+    }
+
+    function syncLabelPreview() {
+        const select = document.getElementById("hgmAnyLabelSelect");
+        const preview = document.getElementById("hgmAnyLabelPreview");
+        const text = document.getElementById("hgmAnyLabelPreviewText");
+
+        if (!select || !preview || !text) return;
+
+        const options = getLabelOptions();
+        const selected = options[Number(select.value)];
+
+        if (!selected) {
+            text.textContent = "No label selected";
+            preview.style.setProperty("--hgm-any-label-color", "#64748b");
+            return;
+        }
+
+        text.textContent = selected.name;
+        preview.style.setProperty("--hgm-any-label-color", normalizeHex(selected.color));
     }
 
     function getCellPosition(cell) {
@@ -1226,486 +1138,171 @@ export function createTableTools(options = {}) {
 
     function getCellMeta(cell) {
         const position = getCellPosition(cell);
-        const tables = getTables();
+        const tables = Array.from(document.querySelectorAll("table"));
 
         return {
-            key: `${position.table.dataset.hgmTableUid}:${position.rowIndex}:${position.colIndex}`,
             tableIndex: tables.indexOf(position.table),
-            tableUid: position.table.dataset.hgmTableUid || "",
             rowIndex: position.rowIndex,
             colIndex: position.colIndex,
-            value: cleanCellText(cell)
+            text: cleanElementText(cell)
         };
     }
 
-    function clearSelection(show = true) {
-        selectedCellMap.forEach((item) => {
-            item.cell.classList.remove("hgm-selected-cell");
-        });
-
-        selectedCellMap.clear();
-
-        if (show && mounted) {
-            showToast("Selection cleared.");
-        }
-    }
-
-    function handleRowLabelSelection(row, event) {
-        if (!labelAnchorRow) {
-            labelAnchorRow = row;
-        }
-
-        if (event.shiftKey && labelAnchorRow && isSameTable(labelAnchorRow, row)) {
-            selectRowRange(labelAnchorRow, row);
-        } else {
-            clearRowSelection(false);
-            labelAnchorRow = row;
-            addRowToSelection(row);
-        }
-
-        const selectedRows = Array.from(selectedRowMap.values()).map((item) => item.row);
-        const rowKeys = selectedRows.map(getRowKeyFromRow).filter(Boolean);
-
-        activeRowKeysForLabel = rowKeys;
-
-        openLabelPopoverForRows(rowKeys, row, event.clientX, event.clientY);
-    }
-
-    function selectRowRange(startRow, endRow) {
-        if (!startRow || !endRow) return;
-        if (!isSameTable(startRow, endRow)) return;
-
-        clearRowSelection(false);
-
-        const table = startRow.closest("table");
-        const rows = Array.from(table.querySelectorAll("tbody tr"));
-
-        const startIndex = rows.indexOf(startRow);
-        const endIndex = rows.indexOf(endRow);
-
-        const min = Math.min(startIndex, endIndex);
-        const max = Math.max(startIndex, endIndex);
-
-        rows.forEach((row, index) => {
-            if (index >= min && index <= max) {
-                addRowToSelection(row);
-            }
-        });
-
-        showToast(`${selectedRowMap.size} row(s) selected.`);
-    }
-
-    function addRowToSelection(row) {
-        const table = row.closest("table");
-        const rows = Array.from(table.querySelectorAll("tbody tr"));
-        const rowIndex = rows.indexOf(row);
-        const key = `${table.dataset.hgmTableUid}:${rowIndex}`;
-
-        selectedRowMap.set(key, {
-            row,
-            rowIndex
-        });
-
-        row.classList.add("hgm-selected-row");
-    }
-
-    function clearRowSelection(show = true) {
-        selectedRowMap.forEach((item) => {
-            item.row.classList.remove("hgm-selected-row");
-        });
-
-        selectedRowMap.clear();
-        activeRowKeysForLabel = [];
-
-        if (show && mounted) {
-            showToast("Row selection cleared.");
-        }
-    }
-
-    function openLabelPopoverForRows(rowKeys, row, x, y) {
-        if (!rowKeys.length) {
-            showToast("No row selected.");
-            return;
-        }
-
-        const popover = document.getElementById("hgmToolsLabelPopover");
-        const lotText = document.getElementById("hgmActiveLotText");
-
-        if (!popover) return;
-
-        if (lotText) {
-            lotText.textContent =
-                rowKeys.length === 1
-                    ? getDisplayRowKey(rowKeys[0])
-                    : `${rowKeys.length} rows selected`;
-        }
-
-        const input = document.getElementById("hgmLabelNameInput");
-        const color = document.getElementById("hgmLabelColorInput");
-        const stored = getStoredLabels();
-
-        if (rowKeys.length === 1 && stored[rowKeys[0]]) {
-            input.value = stored[rowKeys[0]].text || "";
-            color.value = stored[rowKeys[0]].color || "blue";
-        } else {
-            input.value = "";
-            color.value = "blue";
-        }
-
-        const width = 320;
-        const margin = 14;
-
-        const rowRect = row.getBoundingClientRect();
-
-        let left = rowRect.left + window.scrollX + 24;
-        let top = rowRect.bottom + window.scrollY + 12;
-
-        const maxLeft = window.scrollX + window.innerWidth - width - margin;
-
-        if (left > maxLeft) {
-            left = maxLeft;
-        }
-
-        if (left < window.scrollX + margin) {
-            left = window.scrollX + margin;
-        }
-
-        popover.style.position = "absolute";
-        popover.style.left = `${left}px`;
-        popover.style.top = `${top}px`;
-        popover.classList.add("is-open");
-    }
-
-    function closeLabelPopover() {
-        document
-            .getElementById("hgmToolsLabelPopover")
-            ?.classList.remove("is-open");
-    }
-
-    function saveActiveLabel() {
-        if (!activeRowKeysForLabel.length) {
-            showToast("No selected row.");
-            return;
-        }
-
-        const nameInput = document.getElementById("hgmLabelNameInput");
-        const colorInput = document.getElementById("hgmLabelColorInput");
-
-        const labelText = normalize(nameInput?.value || "");
-        const labelColor = colorInput?.value || "blue";
-
-        if (!labelText) {
-            showToast("Please enter a label name.");
-            return;
-        }
-
-        const labels = getStoredLabels();
-
-        activeRowKeysForLabel.forEach((rowKey) => {
-            labels[rowKey] = {
-                text: labelText,
-                color: labelColor,
-                updatedAt: new Date().toISOString()
-            };
-        });
-
-        saveStoredLabels(labels);
-        renderStoredLabels();
-        closeLabelPopover();
-
-        showToast(`Label saved to ${activeRowKeysForLabel.length} row(s).`);
-    }
-
-    function removeActiveLabel() {
-        if (!activeRowKeysForLabel.length) return;
-
-        const labels = getStoredLabels();
-
-        activeRowKeysForLabel.forEach((rowKey) => {
-            delete labels[rowKey];
-        });
-
-        saveStoredLabels(labels);
-        renderStoredLabels();
-        closeLabelPopover();
-
-        showToast(`Label removed from ${activeRowKeysForLabel.length} row(s).`);
-    }
-
-    function clearAllLabels() {
-        sessionStorage.removeItem(storageKey());
-        renderStoredLabels();
-
-        showToast("All temporary labels cleared.");
-    }
-
-    function renderStoredLabels() {
-        clearRenderedLabels();
-
-        const labels = getStoredLabels();
-
-        getTables().forEach((table) => {
-            table.querySelectorAll("tbody tr").forEach((row) => {
-                const rowKey = getRowKeyFromRow(row);
-
-                if (!rowKey || !labels[rowKey]) return;
-
-                renderLabel(row, rowKey, labels[rowKey]);
+    function getVisibleCells(row) {
+        return Array.from(row.children)
+            .filter((child) => child.matches("td, th"))
+            .filter((cell) => {
+                const style = window.getComputedStyle(cell);
+                return style.display !== "none" && style.visibility !== "hidden";
             });
-        });
     }
 
-    function clearRenderedLabels() {
-        document.querySelectorAll(".hgm-lot-label").forEach((label) => {
-            label.remove();
-        });
-
-        document.querySelectorAll("[data-hgm-label-color]").forEach((row) => {
-            row.removeAttribute("data-hgm-label-color");
-        });
+    function isSameTable(a, b) {
+        if (!a || !b) return false;
+        return a.closest("table") === b.closest("table");
     }
 
-    function renderLabel(row, rowKey, label) {
-        row.setAttribute("data-hgm-label-color", label.color || "blue");
-
-        const targetCell = getLabelAnchorCell(row);
-        if (!targetCell) return;
-
-        const badge = document.createElement("span");
-        badge.className = `hgm-lot-label hgm-lot-label-${label.color || "blue"}`;
-        badge.textContent = label.text;
-        badge.title = `Temporary session label for ${getDisplayRowKey(rowKey)}`;
-
-        targetCell.appendChild(badge);
+    function storageKey() {
+        return [
+            config.storagePrefix,
+            config.pageKey || window.location.pathname
+        ].join(":");
     }
 
-    function getLabelAnchorCell(row) {
-        if (config.rowKey.selector) {
-            const element = row.querySelector(config.rowKey.selector);
-            if (element) return element;
+    function getStoredLabels() {
+        try {
+            const raw = sessionStorage.getItem(storageKey());
+            return raw ? JSON.parse(raw) : {};
+        } catch {
+            return {};
+        }
+    }
+
+    function saveStoredLabels(labels) {
+        try {
+            sessionStorage.setItem(storageKey(), JSON.stringify(labels || {}));
+        } catch {
+            showToast("Storage is full or disabled.");
+        }
+    }
+
+    function getSelectionKey(element) {
+        if (!element.dataset.hgmAnySelectUid) {
+            element.dataset.hgmAnySelectUid = `hgm-select-${Date.now()}-${Math.random()
+                .toString(16)
+                .slice(2)}`;
         }
 
-        const cells = Array.from(row.querySelectorAll("td")).filter(isVisibleCell);
-        if (!cells.length) return null;
-
-        const table = row.closest("table");
-        const index = detectRowKeyColumnIndex(table);
-
-        if (index !== null && cells[index]) {
-            return cells[index];
-        }
-
-        return cells[0];
+        return `selection::${element.dataset.hgmAnySelectUid}`;
     }
 
-    function getRowKeyFromRow(row) {
-        if (!row) return "";
+    function getElementStorageKey(element) {
+        if (!element) return "";
 
-        const table = row.closest("table");
-        if (!table) return "";
-
-        ensureTableId(table, getTables().indexOf(table));
-
-        const cells = Array.from(row.querySelectorAll("td")).filter(isVisibleCell);
-        if (!cells.length) return "";
-
-        if (config.rowKey.selector) {
-            const element = row.querySelector(config.rowKey.selector);
-            const value = normalize(element?.innerText || element?.value || "");
-
-            if (value) {
-                return `${table.dataset.hgmTableUid}::${value}`;
-            }
+        if (element.dataset.hgmLabelKey) {
+            return `custom::${element.dataset.hgmLabelKey}`;
         }
 
-        if (
-            typeof config.rowKey.columnIndex === "number" &&
-            config.rowKey.columnIndex >= 0 &&
-            cells[config.rowKey.columnIndex]
+        if (element.id) {
+            return `id::${element.id}`;
+        }
+
+        const text = cleanElementText(element).slice(0, 80);
+        const path = getCssPath(element);
+
+        return `auto::${path}::${text}`;
+    }
+
+    function findElementByStorageKey(key) {
+        if (!key) return null;
+
+        if (key.startsWith("custom::")) {
+            const value = key.replace(/^custom::/, "");
+            return document.querySelector(`[data-hgm-label-key="${cssEscape(value)}"]`);
+        }
+
+        if (key.startsWith("id::")) {
+            const value = key.replace(/^id::/, "");
+            return document.getElementById(value);
+        }
+
+        const candidates = Array.from(document.querySelectorAll(config.selector))
+            .filter((element) => !isInsideTools(element));
+
+        return candidates.find((element) => getElementStorageKey(element) === key) || null;
+    }
+
+    function getCssPath(element) {
+        const parts = [];
+        let current = element;
+
+        while (
+            current &&
+            current.nodeType === 1 &&
+            current !== document.body &&
+            current !== document.documentElement
         ) {
-            const value = cleanCellText(cells[config.rowKey.columnIndex]);
+            let part = current.tagName.toLowerCase();
 
-            if (value) {
-                return `${table.dataset.hgmTableUid}::${value}`;
+            if (current.id) {
+                part += `#${current.id}`;
+                parts.unshift(part);
+                break;
             }
-        }
 
-        const detectedIndex = detectRowKeyColumnIndex(table);
+            const parent = current.parentElement;
 
-        if (detectedIndex !== null && cells[detectedIndex]) {
-            const value = cleanCellText(cells[detectedIndex]);
+            if (parent) {
+                const siblings = Array.from(parent.children).filter(
+                    (child) => child.tagName === current.tagName
+                );
 
-            if (value) {
-                return `${table.dataset.hgmTableUid}::${value}`;
+                if (siblings.length > 1) {
+                    part += `:nth-of-type(${siblings.indexOf(current) + 1})`;
+                }
             }
+
+            parts.unshift(part);
+            current = current.parentElement;
         }
 
-        const fallbackValue = cells
-            .map(cleanCellText)
-            .find((text) => {
-                return text &&
-                    text !== "-" &&
-                    text.length <= 120 &&
-                    !isCheckboxLikeText(text);
-            });
-
-        if (fallbackValue) {
-            return `${table.dataset.hgmTableUid}::${fallbackValue}`;
-        }
-
-        const rowIndex = Array.from(table.querySelectorAll("tbody tr")).indexOf(row);
-
-        return `${table.dataset.hgmTableUid}::row-${rowIndex}`;
+        return parts.join(">");
     }
 
-    function detectRowKeyColumnIndex(table) {
-        if (!table) return 0;
+    function cleanElementText(element) {
+        if (!element) return "";
 
-        const bodyRows = Array.from(table.querySelectorAll("tbody tr"))
-            .filter((row) => {
-                const cells = Array.from(row.querySelectorAll("td")).filter(isVisibleCell);
-                if (!cells.length) return false;
+        if (element.matches?.("input, textarea, select")) {
+            return normalize(element.value || "");
+        }
 
-                const text = normalize(row.innerText);
-                if (!text) return false;
+        const clone = element.cloneNode(true);
 
-                if (/\|\s*\d+\s*rows/i.test(text)) return false;
+        clone.querySelectorAll(
+            ".hgm-any-label, script, style, noscript, svg, canvas"
+        ).forEach((item) => item.remove());
 
-                return true;
-            });
+        clone.querySelectorAll("button, input, select, textarea").forEach((item) => {
+            const replacement = document.createElement("span");
 
-        if (!bodyRows.length) return 0;
+            replacement.textContent = normalize(
+                item.value ||
+                item.innerText ||
+                item.getAttribute("aria-label") ||
+                item.getAttribute("title") ||
+                ""
+            );
 
-        const maxCols = Math.max(
-            ...bodyRows.map((row) => Array.from(row.querySelectorAll("td")).filter(isVisibleCell).length)
+            item.replaceWith(replacement);
+        });
+
+        return normalize(
+            clone.innerText ||
+            clone.textContent ||
+            element.getAttribute("aria-label") ||
+            element.getAttribute("title") ||
+            ""
         );
-
-        const scores = [];
-
-        for (let colIndex = 0; colIndex < maxCols; colIndex++) {
-            const values = bodyRows
-                .map((row) => {
-                    const cells = Array.from(row.querySelectorAll("td")).filter(isVisibleCell);
-                    return cleanCellText(cells[colIndex]);
-                })
-                .filter((value) => {
-                    return value &&
-                        value !== "-" &&
-                        value.length <= 120 &&
-                        !isCheckboxLikeText(value);
-                });
-
-            if (!values.length) continue;
-
-            const uniqueCount = new Set(values).size;
-            const uniqueRatio = uniqueCount / values.length;
-
-            let score = 0;
-
-            score += uniqueRatio * 100;
-
-            const sample = values.slice(0, 8).join(" ");
-
-            if (/[A-Z]{2,}[-_/]?\d+/i.test(sample)) score += 80;
-            if (/\d{2,}[-_/]\d{2,}/.test(sample)) score += 60;
-            if (/^[A-Z0-9][A-Z0-9\-_/]{2,}$/i.test(values[0])) score += 30;
-
-            if (uniqueRatio < 0.8) score -= 70;
-            if (looksLikeStatusOrCategory(values)) score -= 60;
-
-            if (colIndex === 0 && values.every((v) => v.length <= 2)) score -= 80;
-
-            scores.push({
-                colIndex,
-                score,
-                uniqueRatio,
-                uniqueCount
-            });
-        }
-
-        if (!scores.length) return 0;
-
-        scores.sort((a, b) => b.score - a.score);
-
-        return scores[0].colIndex;
-    }
-
-    function isCheckboxLikeText(value) {
-        const text = normalize(value).toLowerCase();
-
-        return text === "" ||
-            text === "on" ||
-            text === "true" ||
-            text === "false" ||
-            text === "✓" ||
-            text === "✔" ||
-            text === "☑" ||
-            text === "☐";
-    }
-
-    function looksLikeStatusOrCategory(values) {
-        const normalized = values.map((value) => normalize(value).toLowerCase());
-
-        const categoryWords = [
-            "active",
-            "inactive",
-            "completed",
-            "pending",
-            "review",
-            "failed",
-            "paused",
-            "enterprise",
-            "sme",
-            "mid market",
-            "jakarta",
-            "surabaya",
-            "bandung",
-            "makassar",
-            "pontianak"
-        ];
-
-        const hitCount = normalized.filter((value) => categoryWords.includes(value)).length;
-
-        return hitCount / normalized.length >= 0.5;
-    }
-
-    function matrixToTsv(matrix) {
-        return matrix
-            .map((row) =>
-                row
-                    .map((value) =>
-                        String(value || "")
-                            .replace(/\t/g, " ")
-                            .replace(/\r?\n/g, " ")
-                            .trim()
-                    )
-                    .join("\t")
-            )
-            .join("\n");
-    }
-
-    function matrixToHtml(matrix) {
-        const rows = matrix
-            .map((row) => {
-                const cells = row
-                    .map((value) => `<td>${escapeHtml(value)}</td>`)
-                    .join("");
-
-                return `<tr>${cells}</tr>`;
-            })
-            .join("");
-
-        return `
-            <!DOCTYPE html>
-            <html>
-                <head><meta charset="utf-8"></head>
-                <body>
-                    <table border="1" cellspacing="0" cellpadding="4">
-                        <tbody>${rows}</tbody>
-                    </table>
-                </body>
-            </html>
-        `;
     }
 
     function fallbackCopy(text) {
@@ -1723,82 +1320,51 @@ export function createTableTools(options = {}) {
         textarea.remove();
     }
 
-    function isSameTable(a, b) {
-        if (!a || !b) return false;
-        return a.closest("table") === b.closest("table");
-    }
-
-    function getVisibleCells(row) {
-        return Array.from(row.children)
-            .filter((child) => child.matches("td, th"))
-            .filter(isVisibleCell);
-    }
-
-    function isVisibleCell(cell) {
-        if (!cell) return false;
-        if (config.copy.includeHiddenCells) return true;
-
-        const style = window.getComputedStyle(cell);
-
-        if (style.display === "none") return false;
-        if (style.visibility === "hidden") return false;
-
-        return true;
-    }
-
-    function cleanCellText(cell) {
-        if (!cell) return "";
-
-        const clone = cell.cloneNode(true);
-
-        clone.querySelectorAll(".hgm-lot-label, script, style").forEach((element) => {
-            element.remove();
-        });
-
-        clone.querySelectorAll("button, input, select, textarea").forEach((element) => {
-            const replacement = document.createElement("span");
-            replacement.textContent = normalize(
-                element.value ||
-                element.innerText ||
-                element.getAttribute("title") ||
-                ""
-            );
-
-            element.replaceWith(replacement);
-        });
-
-        return normalize(clone.innerText || clone.textContent || "");
-    }
-
     function showToast(message) {
-        const toast = document.getElementById("hgmToolsToast");
+        const toast = document.getElementById("hgmAnyToast");
         if (!toast) return;
 
         toast.textContent = message;
         toast.classList.add("is-open");
 
         clearTimeout(showToast.timer);
+
         showToast.timer = setTimeout(() => {
             toast.classList.remove("is-open");
         }, 2200);
     }
 
-    function getDisplayRowKey(rowKey) {
-        return String(rowKey || "").split("::").pop();
+    function isInsideTools(target) {
+        return Boolean(
+            target.closest?.(
+                "#hgmAnyMenu, #hgmAnyBadge, #hgmAnyToast, #hgmAnyLabelPopover, #hgmAnyWarning"
+            )
+        );
+    }
+
+    function isTypingTarget(target) {
+        return Boolean(
+            target.closest?.("input, textarea, select, option, [contenteditable='true']")
+        );
     }
 
     function normalize(value) {
         return String(value || "")
-            .replace(/\s+/g, " ")
             .replace(/\u00a0/g, " ")
+            .replace(/\s+/g, " ")
             .trim();
     }
 
-    function slugify(value) {
-        return normalize(value)
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/gi, "-")
-            .replace(/^-+|-+$/g, "");
+    function normalizeHex(value) {
+        const raw = normalize(value || "").toLowerCase();
+
+        if (/^#[0-9a-f]{6}$/i.test(raw)) return raw;
+
+        if (/^#[0-9a-f]{3}$/i.test(raw)) {
+            return `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`;
+        }
+
+        return "#2563eb";
     }
 
     function escapeHtml(value) {
@@ -1810,13 +1376,13 @@ export function createTableTools(options = {}) {
             .replace(/'/g, "&#039;");
     }
 
-    function debounce(callback, delay = 150) {
-        let timer = null;
+    function escapeAttribute(value) {
+        return escapeHtml(value).replace(/`/g, "&#096;");
+    }
 
-        return function (...args) {
-            clearTimeout(timer);
-            timer = setTimeout(() => callback.apply(this, args), delay);
-        };
+    function cssEscape(value) {
+        if (window.CSS?.escape) return window.CSS.escape(value);
+        return String(value || "").replace(/["\\]/g, "\\$&");
     }
 
     function deepMerge(target, source) {
@@ -1838,18 +1404,10 @@ export function createTableTools(options = {}) {
     }
 
     function readAttributeOptions() {
-        const element = document.querySelector("[data-hgm-table-tools]");
+        const element = document.querySelector("[data-hgm-any-tools]");
         if (!element) return {};
 
         const options = {};
-
-        if (element.dataset.launcher) {
-            options.launcher = element.dataset.launcher;
-        }
-
-        if (element.dataset.userId) {
-            options.userId = element.dataset.userId;
-        }
 
         if (element.dataset.pageKey) {
             options.pageKey =
@@ -1858,146 +1416,16 @@ export function createTableTools(options = {}) {
                     : element.dataset.pageKey;
         }
 
-        if (element.dataset.tableSelector) {
-            options.tableSelector = element.dataset.tableSelector;
+        if (element.dataset.defaultColor) {
+            options.defaultColor = normalizeHex(element.dataset.defaultColor);
         }
 
-        if (element.dataset.rowKeyColumnIndex) {
-            const value = Number(element.dataset.rowKeyColumnIndex);
-            if (!Number.isNaN(value)) {
-                options.rowKey = {
-                    columnIndex: value
-                };
-            }
-        }
-
-        if (element.dataset.rowKeySelector) {
-            options.rowKey = {
-                ...(options.rowKey || {}),
-                selector: element.dataset.rowKeySelector
-            };
+        if (element.dataset.selector) {
+            options.selector = element.dataset.selector;
         }
 
         return options;
     }
 
-    function injectRuntimeStyles() {
-        if (document.getElementById("hgmToolsRuntimeStyles")) return;
-
-        const style = document.createElement("style");
-        style.id = "hgmToolsRuntimeStyles";
-        style.textContent = `
-            .hgm-tools-window-actions {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-
-            .hgm-tools-panel-shortcut .hgm-tools-header {
-                cursor: move;
-            }
-
-            .hgm-tools-panel-fixed .hgm-tools-header {
-                cursor: default;
-            }
-
-            .hgm-tools-panel.is-dragging {
-                transition: none !important;
-            }
-
-            .hgm-tools-minimize {
-                width: 30px;
-                height: 30px;
-                border: 0;
-                border-radius: 999px;
-                background: rgba(255, 255, 255, .14);
-                color: #ffffff;
-                cursor: pointer;
-                font-size: 20px;
-                font-weight: 900;
-                line-height: 1;
-            }
-
-            .hgm-tools-panel .hgm-tools-minimized-bar {
-                display: none;
-            }
-
-            .hgm-tools-panel-shortcut.is-minimized {
-                width: 260px !important;
-                max-width: calc(100vw - 28px);
-                overflow: hidden;
-            }
-
-            .hgm-tools-panel-shortcut.is-minimized .hgm-tools-header,
-            .hgm-tools-panel-shortcut.is-minimized .hgm-tools-body {
-                display: none !important;
-            }
-
-            .hgm-tools-panel-shortcut.is-minimized .hgm-tools-minimized-bar {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                padding: 13px 15px;
-                background: linear-gradient(135deg, #0f172a, #2563eb);
-                color: #ffffff;
-                cursor: pointer;
-            }
-
-            .hgm-tools-panel-shortcut.is-minimized .hgm-tools-minimized-bar span {
-                font-size: 18px;
-            }
-
-            .hgm-tools-panel-shortcut.is-minimized .hgm-tools-minimized-bar strong {
-                font-size: 13px;
-                font-weight: 900;
-            }
-
-            .hgm-tools-panel-shortcut.is-minimized .hgm-tools-minimized-bar small {
-                margin-left: auto;
-                color: rgba(255, 255, 255, .75);
-                font-size: 11px;
-                font-weight: 700;
-            }
-
-            .hgm-selected-row td,
-            .hgm-selected-row th {
-                outline: 2px solid #2563eb !important;
-                outline-offset: -2px;
-                background: rgba(37, 99, 235, .12) !important;
-            }
-
-            body.hgm-copy-mode-active,
-            body.hgm-label-mode-active {
-                user-select: none;
-            }
-        `;
-
-        document.head.appendChild(style);
-    }
-
-    const api = {
-        mount,
-        destroy,
-
-        open: restorePanel,
-        close: closePanel,
-        minimize: minimizePanel,
-        restore: restorePanel,
-
-        refreshTableList,
-        getTables,
-
-        copySelectedCells,
-        clearSelection,
-
-        renderStoredLabels,
-        clearAllLabels,
-        clearRowSelection,
-        getStoredLabels,
-        storageKey
-    };
-
     return api;
 }
-
-export default createTableTools;
