@@ -1,0 +1,34 @@
+{
+  "name": "@hgm/table-tools",
+  "version": "1.0.0",
+  "description": "Reusable table tools for selective copy and temporary session-based lot labeling.",
+  "main": "dist/hgm-table-tools.cjs",
+  "module": "dist/hgm-table-tools.esm.js",
+  "style": "dist/hgm-table-tools.css",
+  "exports": {
+    ".": {
+      "import": "./dist/hgm-table-tools.esm.js",
+      "require": "./dist/hgm-table-tools.cjs"
+    },
+    "./style.css": "./dist/hgm-table-tools.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build"
+  },
+  "keywords": [
+    "table",
+    "excel",
+    "spreadsheet",
+    "copy",
+    "label",
+    "sessionStorage"
+  ],
+  "author": "HAGEMA TECH",
+  "license": "MIT",
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
