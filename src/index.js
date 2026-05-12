@@ -320,13 +320,15 @@ export function createTableTools(options = {}) {
                     <option value="purple">Purple</option>
                 </select>
 
-                <button type="button" class="hgm-tools-button primary" data-hgm-save-label>
-                    Save Label to Selected Rows
-                </button>
+                <div style="display:flex; justify-content: between; gap: 50px; margin-top: 20px;">
+                    <button type="button" class="hgm-tools-button primary" data-hgm-save-label>
+                        Save Label
+                    </button>
 
-                <button type="button" class="hgm-tools-button danger" data-hgm-remove-label>
-                    Remove Label from Selected Rows
-                </button>
+                    <button type="button" class="hgm-tools-button danger" data-hgm-remove-label>
+                        Remove Label
+                    </button>
+                </div>
             </div>
         `;
 
