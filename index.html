@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Table Copy & Label Tools - HAGEMATECH</title>
+
+    <link rel="shortcut icon" href="https://blogger.googleusercontent.com/img/a/AVvXsEi5ThY9ehYWCy_fhziT9GXgJGL3iTslzB6qyWOPzoCubRk1SsjpLE124Bf4HLtUBeTsHjmw2lNY513zNsI5g9c8mpPG69tWjbnpg0xe40LAsb_8c06wHm0jB_SaU7tCyUNM4lJUi28MYkquC0qRes1VXNod-Hw6V9cKjGlEm5KQmhsAlW6GB22O67Nf5mo" type="image/x-icon">
+    <meta
+        name="description"
+        content="Reusable JavaScript and CSS tools for Copas Mode, Labels Mode, table copy, pin badges, and temporary session-based annotation."
+    />
+
+    <!-- Apply theme before page render -->
+    <script>
+        (function () {
+            const savedTheme = localStorage.getItem("hagematech-theme");
+            const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+            if (savedTheme === "dark" || (!savedTheme && systemDark)) {
+                document.documentElement.classList.add("dark");
+            } else {
+                document.documentElement.classList.remove("dark");
+            }
+        })();
+    </script>
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"]
+                    },
+                    boxShadow: {
+                        soft: "0 24px 80px rgba(15, 23, 42, .12)",
+                        glow: "0 0 80px rgba(37, 99, 235, .28)"
+                    }
+                }
+            }
+        };
+    </script>
+
+    <style>
+        .noise-bg {
+            background-image:
+                radial-gradient(circle at 20% 20%, rgba(59, 130, 246, .18), transparent 28%),
+                radial-gradient(circle at 80% 0%, rgba(168, 85, 247, .18), transparent 26%),
+                radial-gradient(circle at 50% 90%, rgba(20, 184, 166, .14), transparent 30%);
+        }
+
+        .code-scroll::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+
+        .code-scroll::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, .5);
+            border-radius: 999px;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-950 antialiased transition-colors duration-300 dark:bg-slate-950 dark:text-white">
+
+    <!-- Header -->
+    <header class="fixed inset-x-0 top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl transition-colors duration-300 dark:border-white/10 dark:bg-slate-950/80">
+        <div class="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
+            <a href="#" class="flex items-center gap-3">
+                <img
+                    class="h-14 w-14 rounded-2xl object-contain sm:h-16 sm:w-16"
+                    src="https://blogger.googleusercontent.com/img/a/AVvXsEi5ThY9ehYWCy_fhziT9GXgJGL3iTslzB6qyWOPzoCubRk1SsjpLE124Bf4HLtUBeTsHjmw2lNY513zNsI5g9c8mpPG69tWjbnpg0xe40LAsb_8c06wHm0jB_SaU7tCyUNM4lJUi28MYkquC0qRes1VXNod-Hw6V9cKjGlEm5KQmhsAlW6GB22O67Nf5mo"
+                    alt="Hagematech Logo"
+                />
+
+                <div>
+                    <div class="text-sm font-black leading-none tracking-tight sm:text-base">
+                        HAGEMA TECH
+                    </div>
+                    <div class="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        Copas & Labels
+                    </div>
+                </div>
+            </a>
+
+            <nav class="hidden items-center gap-8 text-sm font-bold text-slate-600 dark:text-slate-300 lg:flex">
+                <a href="#features" class="hover:text-blue-600 dark:hover:text-blue-400">Features</a>
+                <a href="#demo" class="hover:text-blue-600 dark:hover:text-blue-400">Demo</a>
+                <a href="#install" class="hover:text-blue-600 dark:hover:text-blue-400">Install</a>
+                <a href="#usage" class="hover:text-blue-600 dark:hover:text-blue-400">Usage</a>
+                <a href="#contact" class="hover:text-blue-600 dark:hover:text-blue-400">Contact</a>
+            </nav>
+
+            <div class="flex items-center gap-3">
+
+                <button
+                    id="themeToggle"
+                    type="button"
+                    class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                    aria-label="Toggle theme"
+                >
+                    <span id="themeIcon">🌙</span>
+                </button>
+
+                <a
+                    href="#install"
+                    class="hidden rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-blue-600/25 transition hover:-translate-y-0.5 hover:bg-blue-700 sm:inline-flex"
+                >
+                    Get Started
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <main class="overflow-hidden">
+
+        <!-- Hero -->
+        <section class="noise-bg relative pt-32 sm:pt-36 lg:pt-44">
+            <div class="absolute inset-x-0 top-0 -z-10 h-[620px] bg-gradient-to-b from-blue-50 via-white to-slate-50 dark:from-blue-950/30 dark:via-slate-950 dark:to-slate-950"></div>
+
+            <div class="mx-auto grid max-w-7xl items-center gap-12 px-5 pb-20 lg:grid-cols-2 lg:px-8 lg:pb-28">
+                <div>
+                    <div class="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-black uppercase tracking-wide text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
+                        <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                        JavaScript Table Tools
+                    </div>
+
+                    <h1 class="max-w-4xl text-4xl font-black tracking-tight text-slate-950 dark:text-white sm:text-6xl lg:text-7xl">
+                        Copy table data and label anything on your web page.
+                    </h1>
+
+                    <p class="mt-6 max-w-2xl text-base font-medium leading-8 text-slate-600 dark:text-slate-300 sm:text-lg">
+                        Hagematech Copas Labels is a lightweight JavaScript and CSS package for
+                        Copas Mode, Labels Mode, pin badges, label filters, and temporary session-based annotation.
+                    </p>
+
+                    <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+                        <a
+                            href="#install"
+                            class="inline-flex items-center justify-center rounded-2xl bg-blue-600 px-6 py-4 text-sm font-black text-white shadow-xl shadow-blue-600/25 transition hover:-translate-y-1 hover:bg-blue-700"
+                        >
+                            Install Package
+                        </a>
+
+                        <a
+                            href="#usage"
+                            class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm font-black text-slate-800 shadow-sm transition hover:-translate-y-1 hover:bg-slate-100 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+                        >
+                            View Usage
+                        </a>
+                    </div>
+
+                    <div class="mt-8 flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500 dark:text-slate-400">
+                        <span class="rounded-full bg-white px-3 py-2 shadow-sm dark:bg-white/10">Plain HTML</span>
+                        <span class="rounded-full bg-white px-3 py-2 shadow-sm dark:bg-white/10">React</span>
+                        <span class="rounded-full bg-white px-3 py-2 shadow-sm dark:bg-white/10">Vue</span>
+                        <span class="rounded-full bg-white px-3 py-2 shadow-sm dark:bg-white/10">Laravel</span>
+                        <span class="rounded-full bg-white px-3 py-2 shadow-sm dark:bg-white/10">Next.js</span>
+                    </div>
+                </div>
+
+                <!-- Hero Preview -->
+                <div class="relative">
+                    <div class="absolute -inset-6 rounded-[2.5rem] bg-blue-600/20 blur-3xl dark:bg-blue-500/20"></div>
+
+                    <div class="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-soft dark:border-white/10 dark:bg-slate-900">
+                        <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4 dark:border-white/10 dark:bg-white/5">
+                            <div class="flex items-center gap-2">
+                                <span class="h-3 w-3 rounded-full bg-red-400"></span>
+                                <span class="h-3 w-3 rounded-full bg-yellow-400"></span>
+                                <span class="h-3 w-3 rounded-full bg-emerald-400"></span>
+                            </div>
+                            <div class="text-xs font-black text-slate-500 dark:text-slate-400">
+                                Live Tools Preview
+                            </div>
+                        </div>
+
+                        <div class="p-5">
+                            <div class="mb-5 rounded-3xl bg-slate-900 p-3 shadow-glow dark:bg-slate-950">
+                                <div class="flex items-center gap-3 overflow-x-auto">
+                                    <button class="shrink-0 rounded-full bg-white/10 px-4 py-2 text-xs font-black text-white">
+                                        All <span class="ml-1 rounded-full bg-white/20 px-2 py-1">8</span>
+                                    </button>
+                                    <button class="shrink-0 rounded-full bg-red-500/20 px-4 py-2 text-xs font-black text-red-200">
+                                        Urgent <span class="ml-1 rounded-full bg-red-500/30 px-2 py-1">2</span>
+                                    </button>
+                                    <button class="shrink-0 rounded-full bg-amber-500/20 px-4 py-2 text-xs font-black text-amber-200">
+                                        Hold <span class="ml-1 rounded-full bg-amber-500/30 px-2 py-1">1</span>
+                                    </button>
+                                    <button class="shrink-0 rounded-full bg-emerald-500/20 px-4 py-2 text-xs font-black text-emerald-200">
+                                        Done <span class="ml-1 rounded-full bg-emerald-500/30 px-2 py-1">5</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="grid gap-4 sm:grid-cols-2">
+                                <div class="relative rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/60">
+                                    <span class="absolute left-4 top-4 h-4 w-4 rounded-full border-2 border-white bg-red-500 shadow-lg"></span>
+                                    <div class="pl-7">
+                                        <div class="text-sm font-black text-slate-900 dark:text-white">Preparation</div>
+                                        <div class="mt-5 text-xs font-bold uppercase tracking-wider text-slate-400">Total Lot</div>
+                                        <div class="mt-1 text-3xl font-black">211</div>
+                                    </div>
+                                </div>
+
+                                <div class="relative rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/60">
+                                    <span class="absolute left-4 top-4 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 shadow-lg"></span>
+                                    <div class="pl-7">
+                                        <div class="text-sm font-black text-slate-900 dark:text-white">Molding</div>
+                                        <div class="mt-5 text-xs font-bold uppercase tracking-wider text-slate-400">Quantity</div>
+                                        <div class="mt-1 text-3xl font-black">157,410</div>
+                                    </div>
+                                </div>
+
+                                <div class="relative rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/60">
+                                    <span class="absolute left-4 top-4 h-4 w-4 rounded-full border-2 border-white bg-blue-500 shadow-lg"></span>
+                                    <div class="pl-7">
+                                        <div class="text-sm font-black text-slate-900 dark:text-white">Trimming</div>
+                                        <div class="mt-5 text-xs font-bold uppercase tracking-wider text-slate-400">Quantity</div>
+                                        <div class="mt-1 text-3xl font-black">110,563</div>
+                                    </div>
+                                </div>
+
+                                <div class="relative rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/60">
+                                    <span class="absolute left-4 top-4 h-4 w-4 rounded-full border-2 border-white bg-purple-500 shadow-lg"></span>
+                                    <div class="pl-7">
+                                        <div class="text-sm font-black text-slate-900 dark:text-white">Packaging</div>
+                                        <div class="mt-5 text-xs font-bold uppercase tracking-wider text-slate-400">Output</div>
+                                        <div class="mt-1 text-3xl font-black">111,874</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-5 flex items-center justify-between rounded-3xl bg-slate-950 px-5 py-4 text-white">
+                                <div class="flex items-center gap-2 text-sm font-black">
+                                    <span class="h-2.5 w-2.5 rounded-full bg-emerald-400"></span>
+                                    Labels Mode
+                                </div>
+                                <div class="text-xs font-bold text-slate-400">
+                                    Ctrl / Alt + T
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Stats -->
+        <section class="border-y border-slate-200 bg-white py-10 dark:border-white/10 dark:bg-slate-900/40">
+            <div class="mx-auto grid max-w-7xl gap-4 px-5 sm:grid-cols-2 lg:grid-cols-4 lg:px-8">
+                <div class="rounded-3xl bg-slate-50 p-6 dark:bg-white/5">
+                    <div class="text-3xl font-black">2</div>
+                    <div class="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">Main Modes</div>
+                </div>
+                <div class="rounded-3xl bg-slate-50 p-6 dark:bg-white/5">
+                    <div class="text-3xl font-black">TSV</div>
+                    <div class="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">Spreadsheet Copy</div>
+                </div>
+                <div class="rounded-3xl bg-slate-50 p-6 dark:bg-white/5">
+                    <div class="text-3xl font-black">CDN</div>
+                    <div class="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">Ready to Use</div>
+                </div>
+                <div class="rounded-3xl bg-slate-50 p-6 dark:bg-white/5">
+                    <div class="text-3xl font-black">0 DB</div>
+                    <div class="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">Session Based</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section id="features" class="py-20 lg:py-28">
+            <div class="mx-auto max-w-7xl px-5 lg:px-8">
+                <div class="mx-auto max-w-3xl text-center">
+                    <div class="text-sm font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                        Features
+                    </div>
+                    <h2 class="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+                        Built for real dashboard workflows.
+                    </h2>
+                    <p class="mt-5 text-base font-medium leading-8 text-slate-600 dark:text-slate-300">
+                        Designed for admin panels, CRM tables, finance reports, inventory systems,
+                        and internal tools that need fast annotation without backend storage.
+                    </p>
+                </div>
+
+                <div class="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-2xl dark:bg-blue-500/15">📋</div>
+                        <h3 class="text-lg font-black">Copas Mode</h3>
+                        <p class="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                            Select table cells or page content and copy it quickly with keyboard shortcuts.
+                        </p>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-2xl dark:bg-emerald-500/15">🏷️</div>
+                        <h3 class="text-lg font-black">Labels Mode</h3>
+                        <p class="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                            Add temporary colored labels to cells, cards, buttons, text, and other elements.
+                        </p>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-100 text-2xl dark:bg-purple-500/15">📌</div>
+                        <h3 class="text-lg font-black">Pin Badges</h3>
+                        <p class="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                            Labeled elements show small colored badges, making review work easier to track.
+                        </p>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-2xl dark:bg-amber-500/15">🔎</div>
+                        <h3 class="text-lg font-black">Label Filter Bar</h3>
+                        <p class="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                            Filter labeled elements by status, priority, review type, or your own custom labels.
+                        </p>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-100 text-2xl dark:bg-cyan-500/15">⚡</div>
+                        <h3 class="text-lg font-black">Keyboard First</h3>
+                        <p class="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                            Press Ctrl/Alt + T to open tools, Ctrl + C to copy, and Ctrl + Shift + X to clear labels.
+                        </p>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-2xl dark:bg-rose-500/15">🧩</div>
+                        <h3 class="text-lg font-black">Framework Friendly</h3>
+                        <p class="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                            Works with plain HTML, CDN, Laravel, React, Vue, Vite, and Next.js client components.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Demo -->
+        <section id="demo" class="bg-slate-100 py-20 dark:bg-slate-900/60 lg:py-28">
+            <div class="mx-auto max-w-7xl px-5 lg:px-8">
+                <div class="grid items-center gap-10 lg:grid-cols-2">
+                    <div>
+                        <div class="text-sm font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                            Demo Experience
+                        </div>
+
+                        <h2 class="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+                            Add tools without rebuilding your table.
+                        </h2>
+
+                        <p class="mt-5 text-base font-medium leading-8 text-slate-600 dark:text-slate-300">
+                            Add one configuration div, load CSS and JS, then call
+                            <code class="rounded bg-slate-200 px-1.5 py-1 text-sm dark:bg-white/10">createHgmAnyTools().mount()</code>.
+                        </p>
+
+                        <div class="mt-8 space-y-4">
+                            <div class="flex gap-4">
+                                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-sm font-black text-white">1</div>
+                                <div>
+                                    <h3 class="font-black">Install or use CDN</h3>
+                                    <p class="mt-1 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                                        Use npm package or direct CDN from jsDelivr/unpkg.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-4">
+                                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-sm font-black text-white">2</div>
+                                <div>
+                                    <h3 class="font-black">Add labels config</h3>
+                                    <p class="mt-1 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                                        Define default labels like Urgent, Hold, Recheck, and Done.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-4">
+                                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-sm font-black text-white">3</div>
+                                <div>
+                                    <h3 class="font-black">Use Ctrl / Alt + T</h3>
+                                    <p class="mt-1 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                                        Open the mode chooser and start copying or labeling content.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-soft dark:border-white/10 dark:bg-slate-950">
+                        <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-white/10">
+                            <div class="text-sm font-black">Shortcut Guide</div>
+                            <div class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                                Active
+                            </div>
+                        </div>
+
+                        <div class="p-5">
+                            <div class="grid gap-3">
+                                <div class="flex items-center justify-between rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
+                                    <span class="font-bold">Open Tools Menu</span>
+                                    <span class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white dark:bg-white dark:text-slate-950">Ctrl + T</span>
+                                </div>
+
+                                <div class="flex items-center justify-between rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
+                                    <span class="font-bold">Fallback Open</span>
+                                    <span class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white dark:bg-white dark:text-slate-950">Alt + T</span>
+                                </div>
+
+                                <div class="flex items-center justify-between rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
+                                    <span class="font-bold">Copy Selected</span>
+                                    <span class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white dark:bg-white dark:text-slate-950">Ctrl + C</span>
+                                </div>
+
+                                <div class="flex items-center justify-between rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
+                                    <span class="font-bold">Clear Labels</span>
+                                    <span class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white dark:bg-white dark:text-slate-950">Ctrl + Shift + X</span>
+                                </div>
+
+                                <div class="flex items-center justify-between rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
+                                    <span class="font-bold">Disable Mode</span>
+                                    <span class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white dark:bg-white dark:text-slate-950">Ctrl + X</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Install -->
+        <section id="install" class="py-20 lg:py-28">
+            <div class="mx-auto max-w-7xl px-5 lg:px-8">
+                <div class="mx-auto max-w-3xl text-center">
+                    <div class="text-sm font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                        Installation
+                    </div>
+
+                    <h2 class="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+                        Start with npm or CDN.
+                    </h2>
+                </div>
+
+                <div class="mt-12 grid gap-6 lg:grid-cols-2">
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="mb-4 flex items-center justify-between">
+                            <h3 class="text-lg font-black">NPM</h3>
+                            <span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+                                Recommended
+                            </span>
+                        </div>
+
+                        <pre class="code-scroll overflow-x-auto rounded-2xl bg-slate-950 p-5 text-sm text-slate-100"><code>npm install hagematech-copas-labels</code></pre>
+
+                        <pre class="code-scroll mt-4 overflow-x-auto rounded-2xl bg-slate-950 p-5 text-sm text-slate-100"><code>import createHgmAnyTools from "hagematech-copas-labels";
+import "hagematech-copas-labels/style.css";
+
+createHgmAnyTools().mount();</code></pre>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="mb-4 flex items-center justify-between">
+                            <h3 class="text-lg font-black">CDN Latest</h3>
+                            <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
+                                Fast Demo
+                            </span>
+                        </div>
+
+                        <pre class="code-scroll overflow-x-auto rounded-2xl bg-slate-950 p-5 text-sm text-slate-100"><code>&lt;link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hagematech-copas-labels@latest/src/style.css"&gt;
+
+&lt;script type="module"&gt;
+    import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/hagematech-copas-labels@latest/src/index.js";
+
+    createHgmAnyTools().mount();
+&lt;/script&gt;</code></pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Usage -->
+        <section id="usage" class="bg-slate-100 py-20 dark:bg-slate-900/60 lg:py-28">
+            <div class="mx-auto max-w-7xl px-5 lg:px-8">
+                <div class="mx-auto max-w-3xl text-center">
+                    <div class="text-sm font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                        Quick Usage
+                    </div>
+
+                    <h2 class="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+                        Drop it into any page.
+                    </h2>
+                </div>
+
+                <div class="mt-12 overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-950 shadow-soft dark:border-white/10">
+                    <div class="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                        <div class="flex items-center gap-2">
+                            <span class="h-3 w-3 rounded-full bg-red-400"></span>
+                            <span class="h-3 w-3 rounded-full bg-yellow-400"></span>
+                            <span class="h-3 w-3 rounded-full bg-emerald-400"></span>
+                        </div>
+                        <div class="text-xs font-black text-slate-400">index.html</div>
+                    </div>
+
+                    <pre class="code-scroll overflow-x-auto p-6 text-sm leading-7 text-slate-100"><code>&lt;link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hagematech-copas-labels@latest/src/style.css"&gt;
+
+&lt;div
+    data-hgm-any-tools
+    data-page-key="auto"
+    data-default-color="#2563eb"
+    data-labels='[
+        {"name":"Urgent","color":"#dc2626"},
+        {"name":"Hold","color":"#f59e0b"},
+        {"name":"Recheck","color":"#2563eb"},
+        {"name":"Done","color":"#16a34a"}
+    ]'&gt;
+&lt;/div&gt;
+
+&lt;div class="hgm-table-tools-shortcut-badge"&gt;
+    Press &lt;kbd&gt;Ctrl&lt;/kbd&gt; / &lt;kbd&gt;Alt&lt;/kbd&gt; + &lt;kbd&gt;T&lt;/kbd&gt;
+&lt;/div&gt;
+
+&lt;table&gt;
+    &lt;thead&gt;
+        &lt;tr&gt;
+            &lt;th&gt;Deal ID&lt;/th&gt;
+            &lt;th&gt;Customer&lt;/th&gt;
+            &lt;th&gt;Status&lt;/th&gt;
+        &lt;/tr&gt;
+    &lt;/thead&gt;
+
+    &lt;tbody&gt;
+        &lt;tr&gt;
+            &lt;td data-hgm-label-key="deal-1001-id"&gt;CRM-1001&lt;/td&gt;
+            &lt;td data-hgm-label-key="deal-1001-customer"&gt;Nusantara Capital Bank&lt;/td&gt;
+            &lt;td data-hgm-label-key="deal-1001-status"&gt;Completed&lt;/td&gt;
+        &lt;/tr&gt;
+    &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;script type="module"&gt;
+    import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/hagematech-copas-labels@latest/src/index.js";
+
+    createHgmAnyTools().mount();
+&lt;/script&gt;</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Frameworks -->
+        <section class="py-20 lg:py-28">
+            <div class="mx-auto max-w-7xl px-5 lg:px-8">
+                <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 text-center shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="text-4xl">⚛️</div>
+                        <h3 class="mt-4 font-black">React</h3>
+                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Mount inside useEffect.</p>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 text-center shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="text-4xl">▲</div>
+                        <h3 class="mt-4 font-black">Next.js</h3>
+                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Use client component.</p>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 text-center shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="text-4xl">💚</div>
+                        <h3 class="mt-4 font-black">Vue</h3>
+                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Mount onMounted.</p>
+                    </div>
+
+                    <div class="rounded-[2rem] border border-slate-200 bg-white p-7 text-center shadow-sm dark:border-white/10 dark:bg-white/5">
+                        <div class="text-4xl">🔴</div>
+                        <h3 class="mt-4 font-black">Laravel</h3>
+                        <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Works with Blade tables.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Contact -->
+        <section id="contact" class="bg-white py-20 dark:bg-slate-950 lg:py-28">
+            <div class="mx-auto max-w-7xl px-5 lg:px-8">
+                <div class="mx-auto max-w-3xl text-center">
+                    <div class="text-sm font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                        Contact
+                    </div>
+
+                    <h2 class="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+                        Connect with HAGEMATECH.
+                    </h2>
+
+                    <p class="mt-5 text-base font-medium leading-8 text-slate-600 dark:text-slate-300">
+                        Follow updates, source code, package releases, and public development progress.
+                    </p>
+                </div>
+
+                <div class="mt-12 grid gap-5 md:grid-cols-2">
+                    <a
+                        href="https://instagram.com/hagema.tech"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="group rounded-[2rem] border border-slate-200 bg-slate-50 p-8 shadow-sm transition hover:-translate-y-1 hover:bg-white hover:shadow-soft dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+                    >
+                        <div class="flex items-center justify-between gap-5">
+                            <div>
+                                <div class="text-sm font-black uppercase tracking-wider text-pink-600 dark:text-pink-400">
+                                    Instagram
+                                </div>
+
+                                <h3 class="mt-3 text-2xl font-black text-slate-950 dark:text-white">
+                                    @hagema.tech
+                                </h3>
+
+                                <p class="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                                    Follow visual updates, product previews, and development content.
+                                </p>
+                            </div>
+
+                            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-pink-600 text-sm font-black text-white shadow-lg shadow-pink-600/25 transition group-hover:scale-110">
+                                IG
+                            </div>
+                        </div>
+                    </a>
+
+                    <a
+                        href="https://github.com/kubokabi"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="group rounded-[2rem] border border-slate-200 bg-slate-50 p-8 shadow-sm transition hover:-translate-y-1 hover:bg-white hover:shadow-soft dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+                    >
+                        <div class="flex items-center justify-between gap-5">
+                            <div>
+                                <div class="text-sm font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                                    GitHub
+                                </div>
+
+                                <h3 class="mt-3 text-2xl font-black text-slate-950 dark:text-white">
+                                    github.com/kubokabi
+                                </h3>
+
+                                <p class="mt-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                                    View repositories, package source code, releases, and open-source projects.
+                                </p>
+                            </div>
+
+                            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-sm font-black text-white shadow-lg transition group-hover:scale-110 dark:bg-white dark:text-slate-950">
+                                GH
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA -->
+        <section class="px-5 pb-20 lg:px-8 lg:pb-28">
+            <div class="mx-auto max-w-7xl overflow-hidden rounded-[2.5rem] bg-slate-950 p-8 text-white shadow-soft dark:bg-white dark:text-slate-950 sm:p-12 lg:p-16">
+                <div class="grid items-center gap-8 lg:grid-cols-[1fr_auto]">
+                    <div>
+                        <h2 class="text-3xl font-black tracking-tight sm:text-5xl">
+                            Make your table workflow faster.
+                        </h2>
+
+                        <p class="mt-5 max-w-2xl text-base leading-8 text-slate-300 dark:text-slate-600">
+                            Add spreadsheet-like copy mode and temporary visual labels to any public or internal dashboard.
+                        </p>
+                    </div>
+
+                    <div class="flex flex-col gap-3 sm:flex-row lg:flex-col">
+                        <a
+                            href="#install"
+                            class="inline-flex justify-center rounded-2xl bg-blue-600 px-6 py-4 text-sm font-black text-white shadow-lg shadow-blue-600/25 transition hover:-translate-y-1 hover:bg-blue-700"
+                        >
+                            Install Now
+                        </a>
+
+                        <a
+                            href="#usage"
+                            class="inline-flex justify-center rounded-2xl bg-white/10 px-6 py-4 text-sm font-black text-white ring-1 ring-white/15 transition hover:-translate-y-1 hover:bg-white/15 dark:bg-slate-950 dark:text-white"
+                        >
+                            Copy Usage Code
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-200 bg-white py-10 dark:border-white/10 dark:bg-slate-950">
+        <div class="mx-auto flex max-w-7xl flex-col justify-between gap-4 px-5 text-sm font-semibold text-slate-500 dark:text-slate-400 sm:flex-row lg:px-8">
+            <div>
+                © 2026 HAGEMA TECH. MIT License.
+            </div>
+
+            <div class="flex flex-wrap gap-5">
+                <a href="#features" class="hover:text-blue-600 dark:hover:text-blue-400">Features</a>
+                <a href="#install" class="hover:text-blue-600 dark:hover:text-blue-400">Install</a>
+                <a href="#usage" class="hover:text-blue-600 dark:hover:text-blue-400">Usage</a>
+                <a href="#contact" class="hover:text-blue-600 dark:hover:text-blue-400">Contact</a>
+                <a href="https://instagram.com/hagema.tech" target="_blank" rel="noopener noreferrer" class="hover:text-pink-600 dark:hover:text-pink-400">Instagram</a>
+                <a href="https://github.com/kubokabi" target="_blank" rel="noopener noreferrer" class="hover:text-slate-950 dark:hover:text-white">GitHub</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Theme Toggle Script -->
+    <script>
+        const root = document.documentElement;
+        const toggle = document.getElementById("themeToggle");
+        const icon = document.getElementById("themeIcon");
+
+        function updateThemeIcon() {
+            if (!icon) return;
+
+            if (root.classList.contains("dark")) {
+                icon.textContent = "☀️";
+            } else {
+                icon.textContent = "🌙";
+            }
+        }
+
+        function setTheme(theme) {
+            if (theme === "dark") {
+                root.classList.add("dark");
+            } else {
+                root.classList.remove("dark");
+            }
+
+            localStorage.setItem("hagematech-theme", theme);
+            updateThemeIcon();
+        }
+
+        updateThemeIcon();
+
+        if (toggle) {
+            toggle.addEventListener("click", function () {
+                const nextTheme = root.classList.contains("dark") ? "light" : "dark";
+                setTheme(nextTheme);
+            });
+        }
+    </script>
+</body>
+</html>
