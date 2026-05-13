@@ -1,4 +1,4 @@
-# @hgm/table-tools
+# hagematech-copas-labels
 
 Reusable JavaScript and CSS tools for **Copas Mode**, **Labels Mode**, table copy, pin badges, and temporary session-based annotation.
 
@@ -37,51 +37,19 @@ HGM Table Tools can be used in:
 ## Installation
 
 ```bash
-npm install @hgm/table-tools
+npm install hagematech-copas-labels
 ```
 
 ---
 
 ## Quick Start
 
-### Plain HTML / Local File Usage
-
-```html
-<link rel="stylesheet" href="./hgm-table-tools/src/hgm-table-tools.css">
-
-<div
-    data-hgm-any-tools
-    data-page-key="auto"
-    data-default-color="#2563eb"
-    data-labels='[
-        {"name":"Urgent","color":"#dc2626"},
-        {"name":"Hold","color":"#f59e0b"},
-        {"name":"Recheck","color":"#2563eb"},
-        {"name":"Done","color":"#16a34a"}
-    ]'>
-</div>
-
-<div class="hgm-table-tools-shortcut-badge">
-    Press <kbd>Ctrl</kbd> / <kbd>Alt</kbd> + <kbd>T</kbd>
-</div>
-
-<script type="module">
-    import createHgmAnyTools from "./hgm-table-tools/src/index.js";
-
-    createHgmAnyTools().mount();
-</script>
-```
-
----
-
-## CDN Usage
-
 After publishing to npm, you can use the package from CDN.
 
 ### Using jsDelivr
 
 ```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@hgm/table-tools/src/hgm-table-tools.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hagematech-copas-labels/src/style.css">
 
 <div
     data-hgm-any-tools
@@ -100,7 +68,7 @@ After publishing to npm, you can use the package from CDN.
 </div>
 
 <script type="module">
-    import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/@hgm/table-tools/src/index.js";
+    import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/hagematech-copas-labels/src/index.js";
 
     createHgmAnyTools().mount();
 </script>
@@ -109,7 +77,7 @@ After publishing to npm, you can use the package from CDN.
 ### Using unpkg
 
 ```html
-<link rel="stylesheet" href="https://unpkg.com/@hgm/table-tools/src/hgm-table-tools.css">
+<link rel="stylesheet" href="https://unpkg.com/hagematech-copas-labels/src/style.css">
 
 <div
     data-hgm-any-tools
@@ -128,7 +96,7 @@ After publishing to npm, you can use the package from CDN.
 </div>
 
 <script type="module">
-    import createHgmAnyTools from "https://unpkg.com/@hgm/table-tools/src/index.js";
+    import createHgmAnyTools from "https://unpkg.com/hagematech-copas-labels/src/index.js";
 
     createHgmAnyTools().mount();
 </script>
@@ -145,7 +113,7 @@ After publishing to npm, you can use the package from CDN.
     <meta charset="UTF-8">
     <title>HGM Table Tools Example</title>
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@hgm/table-tools/src/hgm-table-tools.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hagematech-copas-labels/src/style.css">
 
     <style>
         body {
@@ -326,7 +294,7 @@ After publishing to npm, you can use the package from CDN.
     </div>
 
     <script type="module">
-        import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/@hgm/table-tools/src/index.js";
+        import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/hagematech-copas-labels/src/index.js";
 
         createHgmAnyTools().mount();
     </script>
@@ -344,15 +312,15 @@ After publishing to npm, you can use the package from CDN.
 Install:
 
 ```bash
-npm install @hgm/table-tools
+npm install hagematech-copas-labels
 ```
 
 Use in your React component:
 
 ```jsx
 import { useEffect } from "react";
-import createHgmAnyTools from "@hgm/table-tools";
-import "@hgm/table-tools/style.css";
+import createHgmAnyTools from "hagematech-copas-labels";
+import "hagematech-copas-labels/style.css";
 
 export default function App() {
     useEffect(() => {
@@ -423,8 +391,8 @@ Because this package works with the browser DOM, use it in a client component.
 "use client";
 
 import { useEffect } from "react";
-import createHgmAnyTools from "@hgm/table-tools";
-import "@hgm/table-tools/style.css";
+import createHgmAnyTools from "hagematech-copas-labels";
+import "hagematech-copas-labels/style.css";
 
 export default function TableToolsClient() {
     useEffect(() => {
@@ -471,8 +439,8 @@ Then render your table normally in the page.
 ```vue
 <script setup>
 import { onMounted, onBeforeUnmount } from "vue";
-import createHgmAnyTools from "@hgm/table-tools";
-import "@hgm/table-tools/style.css";
+import createHgmAnyTools from "hagematech-copas-labels";
+import "hagematech-copas-labels/style.css";
 
 let tools = null;
 
@@ -532,7 +500,7 @@ onBeforeUnmount(() => {
 ## Laravel / Blade Usage
 
 ```blade
-<link rel="stylesheet" href="{{ asset('vendor/hgm-table-tools/src/hgm-table-tools.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/hagematech-copas-labels/src/style.css') }}">
 
 <div
     data-hgm-any-tools
@@ -579,7 +547,7 @@ onBeforeUnmount(() => {
 </table>
 
 <script type="module">
-    import createHgmAnyTools from "{{ asset('vendor/hgm-table-tools/src/index.js') }}";
+    import createHgmAnyTools from "{{ asset('vendor/hagematech-copas-labels/src/index.js') }}";
 
     createHgmAnyTools().mount();
 </script>
@@ -691,7 +659,7 @@ data-labels='[
 ## JavaScript Configuration
 
 ```js
-import createHgmAnyTools from "@hgm/table-tools";
+import createHgmAnyTools from "hagematech-copas-labels";
 
 const tools = createHgmAnyTools({
     pageKey: "sales-crm",
@@ -777,130 +745,6 @@ This means:
 - Labels are not stored in database
 - Labels disappear after the session ends
 - Labels are useful for temporary review, checking, marking, and internal workflows
-
----
-
-## Recommended Package Structure
-
-```txt
-hgm-table-tools/
-├── src/
-│   ├── index.js
-│   └── hgm-table-tools.css
-├── package.json
-├── README.md
-└── LICENSE
-```
-
----
-
-## Recommended package.json
-
-```json
-{
-  "name": "@hgm/table-tools",
-  "version": "1.0.0",
-  "description": "Reusable JavaScript and CSS tools for table copy mode, label mode, pin badges, and temporary session-based annotation.",
-  "type": "module",
-  "main": "./src/index.js",
-  "module": "./src/index.js",
-  "style": "./src/hgm-table-tools.css",
-  "exports": {
-    ".": {
-      "import": "./src/index.js"
-    },
-    "./style.css": "./src/hgm-table-tools.css",
-    "./src/index.js": "./src/index.js",
-    "./src/hgm-table-tools.css": "./src/hgm-table-tools.css"
-  },
-  "files": [
-    "src",
-    "README.md",
-    "LICENSE"
-  ],
-  "keywords": [
-    "table",
-    "copy",
-    "excel",
-    "spreadsheet",
-    "label",
-    "labels",
-    "badge",
-    "annotation",
-    "sessionStorage",
-    "dashboard",
-    "crm",
-    "admin",
-    "javascript",
-    "css"
-  ],
-  "author": "HAGEMA TECH",
-  "license": "MIT"
-}
-```
-
----
-
-## Import Paths
-
-NPM:
-
-```js
-import createHgmAnyTools from "@hgm/table-tools";
-```
-
-CSS with bundler:
-
-```js
-import "@hgm/table-tools/style.css";
-```
-
-HTML local node_modules:
-
-```html
-<link rel="stylesheet" href="./node_modules/@hgm/table-tools/src/hgm-table-tools.css">
-
-<script type="module">
-    import createHgmAnyTools from "./node_modules/@hgm/table-tools/src/index.js";
-
-    createHgmAnyTools().mount();
-</script>
-```
-
-CDN:
-
-```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@hgm/table-tools/src/hgm-table-tools.css">
-
-<script type="module">
-    import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/@hgm/table-tools/src/index.js";
-
-    createHgmAnyTools().mount();
-</script>
-```
-
----
-
-## Publish to npm
-
-Login:
-
-```bash
-npm login
-```
-
-Publish public scoped package:
-
-```bash
-npm publish --access public
-```
-
-Update version:
-
-```bash
-npm version patch
-npm publish --access public
-```
 
 ---
 
