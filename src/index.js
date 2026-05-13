@@ -2,31 +2,39 @@ const DEFAULT_OPTIONS = {
     pageKey: window.location.pathname,
     storagePrefix: "hgm_any_tools_labels",
     defaultColor: "#2563eb",
+    autoKeyAttribute: "data-hgm-auto-label-key",
 
     selector: [
+        "[data-hgm-label-key]",
+        "[data-hgm-auto-label-key]",
+        ".card",
+        ".table-card",
+        ".table-wrapper",
+        ".table-responsive",
+        ".hgm-table-wrapper",
+        ".hgm-grid",
         "td",
         "th",
-        "article",
-        "section",
-        ".card",
-        ".alert",
-        ".badge",
-        ".btn",
-        "button",
-        "a",
-        "p",
-        "span",
-        "div",
-        "li",
-        "pre",
-        "code",
-        "blockquote",
         "h1",
         "h2",
         "h3",
         "h4",
         "h5",
-        "h6"
+        "h6",
+        "p",
+        "article",
+        "section",
+        ".alert",
+        ".badge",
+        ".btn",
+        "button",
+        "a",
+        "li",
+        "pre",
+        "code",
+        "blockquote",
+        "span",
+        "div"
     ].join(","),
 
     ignoreSelector: [
@@ -34,12 +42,16 @@ const DEFAULT_OPTIONS = {
         "#hgmAnyMenu *",
         "#hgmAnyBadge",
         "#hgmAnyBadge *",
+        "#hgmAnyLabelBar",
+        "#hgmAnyLabelBar *",
         "#hgmAnyToast",
         "#hgmAnyToast *",
         "#hgmAnyLabelPopover",
         "#hgmAnyLabelPopover *",
         "#hgmAnyWarning",
         "#hgmAnyWarning *",
+        ".hgm-any-pin-badge",
+        ".hgm-any-pin-badge *",
         "script",
         "style",
         "meta",
@@ -56,10 +68,14 @@ export default function createHgmAnyTools(userOptions = {}) {
     let mounted = false;
     let activeMode = null;
 
+    let labelRenderTimer = null;
+    let labelObserver = null;
+
     let isDragging = false;
     let anchorCell = null;
     let activeLabelTarget = null;
     let pendingModeAfterWarning = null;
+    let activeLabelFilterName = null;
 
     const selectedMap = new Map();
 
@@ -71,7 +87,9 @@ export default function createHgmAnyTools(userOptions = {}) {
         disableMode,
         copySelected,
         clearSelection,
-        renderStoredLabels
+        renderStoredLabels,
+        clearAllLabels,
+        clearLabelFilter
     };
 
     function mount() {
@@ -80,6 +98,11 @@ export default function createHgmAnyTools(userOptions = {}) {
         createUI();
         bindEvents();
         renderStoredLabels();
+        startLabelObserver();
+
+        setTimeout(renderStoredLabels, 100);
+        setTimeout(renderStoredLabels, 350);
+        setTimeout(renderStoredLabels, 800);
 
         mounted = true;
         return api;
@@ -87,9 +110,11 @@ export default function createHgmAnyTools(userOptions = {}) {
 
     function destroy() {
         unbindEvents();
+        stopLabelObserver();
 
         document.getElementById("hgmAnyMenu")?.remove();
         document.getElementById("hgmAnyBadge")?.remove();
+        document.getElementById("hgmAnyLabelBar")?.remove();
         document.getElementById("hgmAnyToast")?.remove();
         document.getElementById("hgmAnyLabelPopover")?.remove();
         document.getElementById("hgmAnyWarning")?.remove();
@@ -98,6 +123,8 @@ export default function createHgmAnyTools(userOptions = {}) {
         document.body.classList.remove("hgm-any-labels-active");
 
         clearSelection(false);
+        clearRenderedLabels();
+
         mounted = false;
     }
 
@@ -126,7 +153,7 @@ export default function createHgmAnyTools(userOptions = {}) {
 
                         <button type="button" class="hgm-any-option" data-hgm-mode="labels">
                             <strong>Labels</strong>
-                            <span>Create and apply temporary labels to any content.</span>
+                            <span>Create label colors, pin content, and filter by label.</span>
                         </button>
                     </div>
 
@@ -158,27 +185,17 @@ export default function createHgmAnyTools(userOptions = {}) {
                     </div>
 
                     <div class="hgm-any-guide-item">
+                        <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>X</kbd>
+                        <span>Clear all temporary labels stored in sessionStorage.</span>
+                    </div>
+
+                    <div class="hgm-any-guide-item">
                         <kbd>Ctrl</kbd> + <kbd>C</kbd>
                         <span>Copy selected content in Copas Mode.</span>
                     </div>
 
-                    <div class="hgm-any-guide-item">
-                        <kbd>Click</kbd> + <kbd>Drag</kbd>
-                        <span>Select multiple table cells or visible page elements.</span>
-                    </div>
-
-                    <div class="hgm-any-guide-item">
-                        <kbd>Shift</kbd> + <kbd>Click</kbd>
-                        <span>Select table cell range like Excel.</span>
-                    </div>
-
-                    <div class="hgm-any-guide-item">
-                        <kbd>Ctrl</kbd> + <kbd>Click</kbd>
-                        <span>Add item to current selection without clearing previous selection.</span>
-                    </div>
-
                     <div class="hgm-any-guide-warning">
-                        Labels are temporary because they are stored in sessionStorage. They usually survive page reloads in the same tab, but are cleared when the browser tab or browser session is closed.
+                        Labels are temporary because they are stored in sessionStorage.
                     </div>
                 </div>
             </div>
@@ -190,6 +207,13 @@ export default function createHgmAnyTools(userOptions = {}) {
         badge.innerHTML = `
             <span class="hgm-any-badge-dot"></span>
             <strong id="hgmAnyBadgeText">Copas Mode</strong>
+        `;
+
+        const labelBar = document.createElement("div");
+        labelBar.id = "hgmAnyLabelBar";
+        labelBar.className = "hgm-any-label-bar";
+        labelBar.innerHTML = `
+            <div class="hgm-any-label-bar-scroll" id="hgmAnyLabelBarScroll"></div>
         `;
 
         const toast = document.createElement("div");
@@ -259,7 +283,7 @@ export default function createHgmAnyTools(userOptions = {}) {
             <div class="hgm-any-warning-card">
                 <div class="hgm-any-warning-title">Temporary Labels Notice</div>
                 <div class="hgm-any-warning-text">
-                    Labels are stored only in sessionStorage. They usually remain available after page reloads in the same tab, but they are temporary and may be cleared when the browser tab or browser session is closed.
+                    Labels are stored only in sessionStorage. They usually remain after reload in the same tab, but they are temporary.
                 </div>
 
                 <button type="button" class="hgm-any-button primary" data-hgm-warning-ok>
@@ -270,12 +294,14 @@ export default function createHgmAnyTools(userOptions = {}) {
 
         document.body.appendChild(menu);
         document.body.appendChild(badge);
+        document.body.appendChild(labelBar);
         document.body.appendChild(toast);
         document.body.appendChild(popover);
         document.body.appendChild(warning);
 
         syncLabelSelectOptions();
         syncLabelPreview();
+        updateLabelBar();
     }
 
     function bindEvents() {
@@ -285,6 +311,9 @@ export default function createHgmAnyTools(userOptions = {}) {
         document.addEventListener("mouseover", handleMouseOver, true);
         document.addEventListener("mouseup", handleMouseUp, true);
         document.addEventListener("change", handleChange, true);
+
+        window.addEventListener("resize", refreshAttachedBadges, true);
+        window.addEventListener("scroll", refreshAttachedBadges, true);
     }
 
     function unbindEvents() {
@@ -294,6 +323,9 @@ export default function createHgmAnyTools(userOptions = {}) {
         document.removeEventListener("mouseover", handleMouseOver, true);
         document.removeEventListener("mouseup", handleMouseUp, true);
         document.removeEventListener("change", handleChange, true);
+
+        window.removeEventListener("resize", refreshAttachedBadges, true);
+        window.removeEventListener("scroll", refreshAttachedBadges, true);
     }
 
     function handleKeydown(event) {
@@ -307,8 +339,11 @@ export default function createHgmAnyTools(userOptions = {}) {
             (isCtrlOrMeta && (key === "t" || code === "keyt")) ||
             (event.altKey && (key === "t" || code === "keyt"));
 
+        const isClearAllLabelsShortcut =
+            isCtrlOrMeta && event.shiftKey && (key === "x" || code === "keyx");
+
         const isCloseShortcut =
-            isCtrlOrMeta && (key === "x" || code === "keyx");
+            isCtrlOrMeta && !event.shiftKey && (key === "x" || code === "keyx");
 
         const isCopyShortcut =
             isCtrlOrMeta && (key === "c" || code === "keyc");
@@ -317,6 +352,13 @@ export default function createHgmAnyTools(userOptions = {}) {
             event.preventDefault();
             event.stopPropagation();
             openMenu();
+            return;
+        }
+
+        if (isClearAllLabelsShortcut) {
+            event.preventDefault();
+            event.stopPropagation();
+            clearAllLabels();
             return;
         }
 
@@ -347,6 +389,21 @@ export default function createHgmAnyTools(userOptions = {}) {
         if (target.closest("[data-hgm-close-menu]")) {
             event.preventDefault();
             closeMenu();
+            return;
+        }
+
+        const labelFilterButton = target.closest("[data-hgm-label-filter]");
+        if (labelFilterButton) {
+            event.preventDefault();
+
+            const value = labelFilterButton.dataset.hgmLabelFilter;
+
+            if (value === "__all__") {
+                clearLabelFilter();
+            } else {
+                toggleLabelFilter(value);
+            }
+
             return;
         }
 
@@ -544,10 +601,7 @@ export default function createHgmAnyTools(userOptions = {}) {
     }
 
     function openLabelWarning() {
-        const warning = document.getElementById("hgmAnyWarning");
-        if (!warning) return;
-
-        warning.classList.add("is-open");
+        document.getElementById("hgmAnyWarning")?.classList.add("is-open");
     }
 
     function closeLabelWarning() {
@@ -575,6 +629,17 @@ export default function createHgmAnyTools(userOptions = {}) {
         closeLabelPopover();
         updateBadge();
 
+        if (mode === "labels") {
+            renderStoredLabels();
+
+            setTimeout(renderStoredLabels, 100);
+            setTimeout(renderStoredLabels, 350);
+            setTimeout(renderStoredLabels, 800);
+        } else {
+            updateLabelBar();
+            refreshAttachedBadges();
+        }
+
         showToast(mode === "copas" ? "Copas Mode enabled." : "Labels Mode enabled.");
     }
 
@@ -583,6 +648,7 @@ export default function createHgmAnyTools(userOptions = {}) {
         isDragging = false;
         anchorCell = null;
         pendingModeAfterWarning = null;
+        activeLabelFilterName = null;
 
         document.body.classList.remove("hgm-any-copas-active");
         document.body.classList.remove("hgm-any-labels-active");
@@ -590,7 +656,11 @@ export default function createHgmAnyTools(userOptions = {}) {
         clearSelection(false);
         closeLabelPopover();
         closeLabelWarning();
+        clearLabelFilterClasses();
+
         updateBadge();
+        updateLabelBar();
+        refreshAttachedBadges();
 
         showToast("Mode disabled.");
     }
@@ -614,10 +684,28 @@ export default function createHgmAnyTools(userOptions = {}) {
         if (!target || target.nodeType !== 1) return null;
         if (target.closest(config.ignoreSelector)) return null;
 
-        const cell = target.closest("td, th");
+        const explicit = target.closest("[data-hgm-label-key]");
+        if (explicit && !isInsideTools(explicit)) {
+            return explicit;
+        }
 
+        const cell = target.closest("td, th");
         if (cell && !isInsideTools(cell)) {
             return cell;
+        }
+
+        if (activeMode === "labels") {
+            const strongBlock = target.closest(
+                ".card, .table-card, .hgm-card, .table-wrapper, .table-responsive, .hgm-table-wrapper, .hgm-grid"
+            );
+
+            if (strongBlock && !isInsideTools(strongBlock)) {
+                const rect = strongBlock.getBoundingClientRect();
+
+                if (rect.width > 0 && rect.height > 0) {
+                    return strongBlock;
+                }
+            }
         }
 
         let element = target.closest(config.selector);
@@ -806,7 +894,6 @@ export default function createHgmAnyTools(userOptions = {}) {
         if (isTypingTarget(event.target)) return;
 
         const target = getSelectableTarget(event.target);
-
         if (!target) return;
 
         event.preventDefault();
@@ -819,7 +906,6 @@ export default function createHgmAnyTools(userOptions = {}) {
         });
 
         target.classList.add("hgm-any-label-target");
-
         openLabelPopover(target);
     }
 
@@ -827,7 +913,6 @@ export default function createHgmAnyTools(userOptions = {}) {
         syncLabelSelectOptions();
 
         const options = getLabelOptions();
-
         const popover = document.getElementById("hgmAnyLabelPopover");
         const targetText = document.getElementById("hgmAnyLabelTargetText");
         const select = document.getElementById("hgmAnyLabelSelect");
@@ -858,32 +943,15 @@ export default function createHgmAnyTools(userOptions = {}) {
 
         const rect = target.getBoundingClientRect();
         const width = 320;
-        const height = 390;
         const margin = 14;
 
-        let left = rect.left + window.scrollX + 16;
+        let left = rect.left + window.scrollX + (rect.width / 2) - (width / 2);
         let top = rect.bottom + window.scrollY + 12;
 
         const minLeft = window.scrollX + margin;
         const maxLeft = window.scrollX + window.innerWidth - width - margin;
 
-        if (left > maxLeft) {
-            left = maxLeft;
-        }
-
-        if (left < minLeft) {
-            left = minLeft;
-        }
-
-        const viewportBottom = window.scrollY + window.innerHeight - margin;
-
-        if (top + height > viewportBottom) {
-            top = rect.top + window.scrollY - height - 12;
-        }
-
-        if (top < window.scrollY + margin) {
-            top = window.scrollY + margin;
-        }
+        left = Math.max(minLeft, Math.min(left, maxLeft));
 
         popover.style.position = "absolute";
         popover.style.left = `${left}px`;
@@ -928,12 +996,14 @@ export default function createHgmAnyTools(userOptions = {}) {
         labels[key] = {
             name: selected.name,
             color: normalizeHex(selected.color),
+            meta: buildElementLabelMeta(activeLabelTarget),
             updatedAt: new Date().toISOString()
         };
 
         saveStoredLabels(labels);
         renderStoredLabels();
         closeLabelPopover();
+        updateLabelBar();
 
         showToast("Label applied.");
     }
@@ -949,8 +1019,78 @@ export default function createHgmAnyTools(userOptions = {}) {
         saveStoredLabels(labels);
         renderStoredLabels();
         closeLabelPopover();
+        updateLabelBar();
 
         showToast("Label removed.");
+    }
+
+    function clearAllLabels() {
+        sessionStorage.removeItem(storageKey());
+
+        activeLabelFilterName = null;
+
+        clearRenderedLabels();
+        closeLabelPopover();
+        updateLabelBar();
+
+        showToast("All labels cleared.");
+    }
+
+    function scheduleRenderStoredLabels() {
+        clearTimeout(labelRenderTimer);
+
+        labelRenderTimer = setTimeout(() => {
+            if (!mounted) return;
+
+            const hasLabels = Object.keys(getStoredLabels()).length > 0;
+
+            if (!hasLabels) {
+                updateLabelBar();
+                refreshAttachedBadges();
+                return;
+            }
+
+            renderStoredLabels();
+        }, 120);
+    }
+
+    function startLabelObserver() {
+        if (labelObserver) return;
+
+        labelObserver = new MutationObserver((mutations) => {
+            const shouldRefresh = mutations.some((mutation) => {
+                if (mutation.type !== "childList") return false;
+
+                return Array.from(mutation.addedNodes).some((node) => {
+                    if (!node || node.nodeType !== 1) return false;
+                    if (isInsideTools(node)) return false;
+
+                    return (
+                        node.matches?.("table, tbody, tr, td, th, .card, .table-card, .table-wrapper, .table-responsive, .hgm-table-wrapper, .hgm-grid") ||
+                        node.querySelector?.("table, tbody, tr, td, th, .card, .table-card, .table-wrapper, .table-responsive, .hgm-table-wrapper, .hgm-grid")
+                    );
+                });
+            });
+
+            if (shouldRefresh) {
+                scheduleRenderStoredLabels();
+            }
+        });
+
+        labelObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    function stopLabelObserver() {
+        clearTimeout(labelRenderTimer);
+        labelRenderTimer = null;
+
+        if (labelObserver) {
+            labelObserver.disconnect();
+            labelObserver = null;
+        }
     }
 
     function renderStoredLabels() {
@@ -959,37 +1099,80 @@ export default function createHgmAnyTools(userOptions = {}) {
         const labels = getStoredLabels();
 
         Object.keys(labels).forEach((key) => {
-            const element = findElementByStorageKey(key);
+            const element = findElementByStorageKey(key, labels[key]);
 
             if (!element) return;
 
-            renderLabel(element, labels[key]);
+            renderLabel(element, labels[key], key);
         });
+
+        applyLabelFilter();
+        updateLabelBar();
+        refreshAttachedBadges();
     }
 
     function clearRenderedLabels() {
-        document.querySelectorAll(".hgm-any-label").forEach((label) => {
-            label.remove();
+        document.querySelectorAll(".hgm-any-pin-badge").forEach((badge) => {
+            badge.remove();
         });
 
         document.querySelectorAll("[data-hgm-any-label-color]").forEach((element) => {
             element.removeAttribute("data-hgm-any-label-color");
+            element.removeAttribute("data-hgm-any-label-name");
             element.style.removeProperty("--hgm-any-label-color");
+            element.classList.remove("hgm-any-label-attached-host");
+            element.classList.remove("hgm-any-filter-hidden");
+            element.classList.remove("hgm-any-filter-dim");
+
+            if (element.dataset.hgmAnyPreviousPosition !== undefined) {
+                element.style.position = element.dataset.hgmAnyPreviousPosition;
+                delete element.dataset.hgmAnyPreviousPosition;
+            }
         });
     }
 
-    function renderLabel(element, label) {
+    function renderLabel(element, label, key) {
         const color = normalizeHex(label.color || config.defaultColor);
+        const computedStyle = window.getComputedStyle(element);
 
+        if (computedStyle.position === "static") {
+            element.dataset.hgmAnyPreviousPosition = element.style.position || "";
+            element.style.position = "relative";
+        } else if (element.dataset.hgmAnyPreviousPosition === undefined) {
+            element.dataset.hgmAnyPreviousPosition = element.style.position || "";
+        }
+
+        element.classList.add("hgm-any-label-attached-host");
         element.setAttribute("data-hgm-any-label-color", color);
+        element.setAttribute("data-hgm-any-label-name", label.name);
         element.style.setProperty("--hgm-any-label-color", color);
 
+        element.querySelectorAll(":scope > .hgm-any-pin-badge").forEach((item) => {
+            item.remove();
+        });
+
         const badge = document.createElement("span");
-        badge.className = "hgm-any-label";
+
+        badge.className = "hgm-any-pin-badge";
+        badge.dataset.hgmLabelKey = key;
         badge.style.setProperty("--hgm-any-label-color", color);
-        badge.textContent = label.name;
+        badge.setAttribute("aria-hidden", "true");
 
         element.appendChild(badge);
+    }
+
+    function refreshAttachedBadges() {
+        document.querySelectorAll(".hgm-any-pin-badge").forEach((badge) => {
+            const host = badge.parentElement;
+
+            if (!host) return;
+
+            const hidden =
+                !document.body.classList.contains("hgm-any-labels-active") ||
+                host.classList.contains("hgm-any-filter-hidden");
+
+            badge.style.display = hidden ? "none" : "inline-flex";
+        });
     }
 
     function labelCatalogKey() {
@@ -1032,6 +1215,14 @@ export default function createHgmAnyTools(userOptions = {}) {
         });
     }
 
+    function labelColorExists(color) {
+        const targetColor = normalizeHex(color);
+
+        return getLabelOptions().some((item) => {
+            return normalizeHex(item.color) === targetColor;
+        });
+    }
+
     function createNewLabelOption() {
         const nameInput = document.getElementById("hgmAnyNewLabelName");
         const colorInput = document.getElementById("hgmAnyNewLabelColor");
@@ -1046,6 +1237,11 @@ export default function createHgmAnyTools(userOptions = {}) {
 
         if (labelNameExists(name)) {
             showToast("This label name already exists.");
+            return;
+        }
+
+        if (labelColorExists(color)) {
+            showToast("This label color already exists. Please choose another color.");
             return;
         }
 
@@ -1070,6 +1266,8 @@ export default function createHgmAnyTools(userOptions = {}) {
         }
 
         syncLabelPreview();
+        updateLabelBar();
+
         showToast("Label created and saved temporarily.");
     }
 
@@ -1084,16 +1282,20 @@ export default function createHgmAnyTools(userOptions = {}) {
 
         if (!labels.length) {
             const option = document.createElement("option");
+
             option.value = "";
             option.textContent = "No label created yet";
+
             select.appendChild(option);
             return;
         }
 
         labels.forEach((label, index) => {
             const option = document.createElement("option");
+
             option.value = String(index);
             option.textContent = `${label.name} — ${label.color}`;
+
             select.appendChild(option);
         });
 
@@ -1120,6 +1322,144 @@ export default function createHgmAnyTools(userOptions = {}) {
 
         text.textContent = selected.name;
         preview.style.setProperty("--hgm-any-label-color", normalizeHex(selected.color));
+    }
+
+    function getLabelStats() {
+        const labels = getStoredLabels();
+        const stats = new Map();
+
+        Object.keys(labels).forEach((key) => {
+            const item = labels[key];
+            if (!item || !item.name) return;
+
+            const name = normalize(item.name);
+            const color = normalizeHex(item.color || config.defaultColor);
+
+            if (!stats.has(name)) {
+                stats.set(name, {
+                    name,
+                    color,
+                    count: 0
+                });
+            }
+
+            stats.get(name).count += 1;
+        });
+
+        return Array.from(stats.values()).sort((a, b) => {
+            return a.name.localeCompare(b.name);
+        });
+    }
+
+    function updateLabelBar() {
+        const bar = document.getElementById("hgmAnyLabelBar");
+        const scroll = document.getElementById("hgmAnyLabelBarScroll");
+
+        if (!bar || !scroll) return;
+
+        if (activeMode !== "labels") {
+            bar.classList.remove("is-open");
+            scroll.innerHTML = "";
+            return;
+        }
+
+        const stats = getLabelStats();
+
+        bar.classList.add("is-open");
+        scroll.innerHTML = "";
+
+        const allButton = document.createElement("button");
+
+        allButton.type = "button";
+        allButton.className = "hgm-any-label-filter-badge";
+        allButton.dataset.hgmLabelFilter = "__all__";
+        allButton.classList.toggle("is-active", !activeLabelFilterName);
+        allButton.innerHTML = `
+            <span class="hgm-any-label-filter-dot"></span>
+            <strong>All</strong>
+            <small>${getTotalLabeledCount()}</small>
+        `;
+
+        scroll.appendChild(allButton);
+
+        if (!stats.length) {
+            const empty = document.createElement("div");
+
+            empty.className = "hgm-any-label-filter-empty";
+            empty.textContent = "No labels yet";
+
+            scroll.appendChild(empty);
+            return;
+        }
+
+        stats.forEach((item) => {
+            const button = document.createElement("button");
+
+            button.type = "button";
+            button.className = "hgm-any-label-filter-badge";
+            button.dataset.hgmLabelFilter = item.name;
+            button.style.setProperty("--hgm-any-label-color", item.color);
+            button.classList.toggle("is-active", activeLabelFilterName === item.name);
+
+            button.innerHTML = `
+                <span class="hgm-any-label-filter-dot"></span>
+                <strong>${escapeHtml(item.name)}</strong>
+                <small>${item.count}</small>
+            `;
+
+            scroll.appendChild(button);
+        });
+    }
+
+    function getTotalLabeledCount() {
+        return Object.keys(getStoredLabels()).length;
+    }
+
+    function toggleLabelFilter(name) {
+        const nextName = normalize(name);
+
+        if (activeLabelFilterName === nextName) {
+            activeLabelFilterName = null;
+        } else {
+            activeLabelFilterName = nextName;
+        }
+
+        applyLabelFilter();
+        updateLabelBar();
+    }
+
+    function clearLabelFilter() {
+        activeLabelFilterName = null;
+        applyLabelFilter();
+        updateLabelBar();
+    }
+
+    function clearLabelFilterClasses() {
+        document.querySelectorAll(".hgm-any-filter-hidden, .hgm-any-filter-dim").forEach((element) => {
+            element.classList.remove("hgm-any-filter-hidden");
+            element.classList.remove("hgm-any-filter-dim");
+        });
+
+        refreshAttachedBadges();
+    }
+
+    function applyLabelFilter() {
+        clearLabelFilterClasses();
+
+        if (!activeLabelFilterName) {
+            refreshAttachedBadges();
+            return;
+        }
+
+        document.querySelectorAll("[data-hgm-any-label-name]").forEach((element) => {
+            const labelName = normalize(element.getAttribute("data-hgm-any-label-name"));
+
+            if (labelName !== activeLabelFilterName) {
+                element.classList.add("hgm-any-filter-hidden");
+            }
+        });
+
+        refreshAttachedBadges();
     }
 
     function getCellPosition(cell) {
@@ -1153,12 +1493,14 @@ export default function createHgmAnyTools(userOptions = {}) {
             .filter((child) => child.matches("td, th"))
             .filter((cell) => {
                 const style = window.getComputedStyle(cell);
+
                 return style.display !== "none" && style.visibility !== "hidden";
             });
     }
 
     function isSameTable(a, b) {
         if (!a || !b) return false;
+
         return a.closest("table") === b.closest("table");
     }
 
@@ -1172,6 +1514,7 @@ export default function createHgmAnyTools(userOptions = {}) {
     function getStoredLabels() {
         try {
             const raw = sessionStorage.getItem(storageKey());
+
             return raw ? JSON.parse(raw) : {};
         } catch {
             return {};
@@ -1203,33 +1546,259 @@ export default function createHgmAnyTools(userOptions = {}) {
             return `custom::${element.dataset.hgmLabelKey}`;
         }
 
-        if (element.id) {
-            return `id::${element.id}`;
-        }
+        const autoKey = ensureAutoLabelKey(element);
 
-        const text = cleanElementText(element).slice(0, 80);
-        const path = getCssPath(element);
-
-        return `auto::${path}::${text}`;
+        return `auto-key::${autoKey}`;
     }
 
-    function findElementByStorageKey(key) {
+    function findElementByStorageKey(key, storedLabel = null) {
         if (!key) return null;
 
         if (key.startsWith("custom::")) {
             const value = key.replace(/^custom::/, "");
+
             return document.querySelector(`[data-hgm-label-key="${cssEscape(value)}"]`);
+        }
+
+        if (key.startsWith("auto-key::")) {
+            const value = key.replace(/^auto-key::/, "");
+
+            let element = document.querySelector(`[data-hgm-auto-label-key="${cssEscape(value)}"]`);
+
+            if (element) return element;
+
+            const candidates = getLabelCandidates();
+
+            for (const candidate of candidates) {
+                const candidateKey = buildStableAutoKey(candidate);
+
+                if (candidateKey === value) {
+                    candidate.setAttribute("data-hgm-auto-label-key", value);
+                    return candidate;
+                }
+            }
+
+            const fallbackElement = findElementByStoredMeta(storedLabel?.meta || null);
+
+            if (fallbackElement) {
+                fallbackElement.setAttribute("data-hgm-auto-label-key", value);
+                return fallbackElement;
+            }
+
+            return null;
         }
 
         if (key.startsWith("id::")) {
             const value = key.replace(/^id::/, "");
+
             return document.getElementById(value);
         }
 
-        const candidates = Array.from(document.querySelectorAll(config.selector))
-            .filter((element) => !isInsideTools(element));
+        const fallbackElement = findElementByStoredMeta(storedLabel?.meta || null);
+
+        if (fallbackElement) return fallbackElement;
+
+        const candidates = getLabelCandidates();
 
         return candidates.find((element) => getElementStorageKey(element) === key) || null;
+    }
+
+    function ensureAutoLabelKey(element) {
+        if (!element) return "";
+
+        const attrName = "data-hgm-auto-label-key";
+        const existing = element.getAttribute(attrName);
+
+        if (existing) return existing;
+
+        const stableKey = buildStableAutoKey(element);
+
+        element.setAttribute(attrName, stableKey);
+
+        return stableKey;
+    }
+
+    function buildStableAutoKey(element) {
+        const meta = buildElementLabelMeta(element);
+
+        const raw = [
+            meta.tag,
+            meta.id,
+            meta.name,
+            meta.role,
+            meta.aria,
+            meta.title,
+            meta.text,
+            meta.cssPath,
+            meta.indexPath
+        ]
+            .filter(Boolean)
+            .join("::");
+
+        return `hgm-${hashString(raw)}`;
+    }
+
+    function buildElementLabelMeta(element) {
+        if (!element) {
+            return {
+                tag: "",
+                id: "",
+                name: "",
+                role: "",
+                aria: "",
+                title: "",
+                text: "",
+                cssPath: "",
+                indexPath: ""
+            };
+        }
+
+        return {
+            tag: element.tagName ? element.tagName.toLowerCase() : "",
+            id: element.id || "",
+            name: element.getAttribute("name") || "",
+            role: element.getAttribute("role") || "",
+            aria: element.getAttribute("aria-label") || "",
+            title: element.getAttribute("title") || "",
+            text: cleanElementText(element).slice(0, 120).toLowerCase(),
+            cssPath: getCssPath(element),
+            indexPath: getElementIndexPath(element)
+        };
+    }
+
+    function getLabelCandidates() {
+        return Array.from(document.querySelectorAll(config.selector))
+            .filter((element) => {
+                if (!element || element.nodeType !== 1) return false;
+                if (isInsideTools(element)) return false;
+
+                const rect = element.getBoundingClientRect();
+
+                if (rect.width <= 0 || rect.height <= 0) return false;
+
+                return true;
+            });
+    }
+
+    function findElementByStoredMeta(meta) {
+        if (!meta) return null;
+
+        if (meta.id) {
+            const byId = document.getElementById(meta.id);
+
+            if (byId) return byId;
+        }
+
+        if (meta.cssPath) {
+            try {
+                const byPath = document.querySelector(meta.cssPath);
+
+                if (byPath && isSameMetaElement(byPath, meta)) {
+                    return byPath;
+                }
+            } catch {
+                /* ignore invalid selector */
+            }
+        }
+
+        const candidates = getLabelCandidates();
+
+        let best = null;
+        let bestScore = 0;
+
+        candidates.forEach((candidate) => {
+            const currentMeta = buildElementLabelMeta(candidate);
+            const score = getMetaMatchScore(currentMeta, meta);
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        });
+
+        return bestScore >= 45 ? best : null;
+    }
+
+    function isSameMetaElement(element, meta) {
+        const currentMeta = buildElementLabelMeta(element);
+
+        return getMetaMatchScore(currentMeta, meta) >= 45;
+    }
+
+    function getMetaMatchScore(current, stored) {
+        let score = 0;
+
+        if (!current || !stored) return score;
+
+        if (current.tag && stored.tag && current.tag === stored.tag) {
+            score += 10;
+        }
+
+        if (current.id && stored.id && current.id === stored.id) {
+            score += 60;
+        }
+
+        if (current.name && stored.name && current.name === stored.name) {
+            score += 30;
+        }
+
+        if (current.role && stored.role && current.role === stored.role) {
+            score += 15;
+        }
+
+        if (current.aria && stored.aria && current.aria === stored.aria) {
+            score += 25;
+        }
+
+        if (current.title && stored.title && current.title === stored.title) {
+            score += 25;
+        }
+
+        if (current.cssPath && stored.cssPath && current.cssPath === stored.cssPath) {
+            score += 35;
+        }
+
+        if (current.indexPath && stored.indexPath && current.indexPath === stored.indexPath) {
+            score += 20;
+        }
+
+        if (current.text && stored.text) {
+            if (current.text === stored.text) {
+                score += 45;
+            } else if (
+                current.text.includes(stored.text) ||
+                stored.text.includes(current.text)
+            ) {
+                score += 25;
+            }
+        }
+
+        return score;
+    }
+
+    function getElementIndexPath(element) {
+        const parts = [];
+        let current = element;
+
+        while (
+            current &&
+            current.nodeType === 1 &&
+            current !== document.body &&
+            current !== document.documentElement
+        ) {
+            const parent = current.parentElement;
+
+            if (!parent) break;
+
+            const children = Array.from(parent.children);
+            const index = children.indexOf(current);
+
+            parts.unshift(index);
+
+            current = parent;
+        }
+
+        return parts.join("-");
     }
 
     function getCssPath(element) {
@@ -1279,7 +1848,7 @@ export default function createHgmAnyTools(userOptions = {}) {
         const clone = element.cloneNode(true);
 
         clone.querySelectorAll(
-            ".hgm-any-label, script, style, noscript, svg, canvas"
+            ".hgm-any-pin-badge, script, style, noscript, svg, canvas"
         ).forEach((item) => item.remove());
 
         clone.querySelectorAll("button, input, select, textarea").forEach((item) => {
@@ -1322,6 +1891,7 @@ export default function createHgmAnyTools(userOptions = {}) {
 
     function showToast(message) {
         const toast = document.getElementById("hgmAnyToast");
+
         if (!toast) return;
 
         toast.textContent = message;
@@ -1337,7 +1907,7 @@ export default function createHgmAnyTools(userOptions = {}) {
     function isInsideTools(target) {
         return Boolean(
             target.closest?.(
-                "#hgmAnyMenu, #hgmAnyBadge, #hgmAnyToast, #hgmAnyLabelPopover, #hgmAnyWarning"
+                "#hgmAnyMenu, #hgmAnyBadge, #hgmAnyLabelBar, #hgmAnyToast, #hgmAnyLabelPopover, #hgmAnyWarning, .hgm-any-pin-badge"
             )
         );
     }
@@ -1367,6 +1937,18 @@ export default function createHgmAnyTools(userOptions = {}) {
         return "#2563eb";
     }
 
+    function hashString(value) {
+        let hash = 0;
+        const text = String(value || "");
+
+        for (let i = 0; i < text.length; i++) {
+            hash = ((hash << 5) - hash) + text.charCodeAt(i);
+            hash |= 0;
+        }
+
+        return Math.abs(hash).toString(36);
+    }
+
     function escapeHtml(value) {
         return String(value || "")
             .replace(/&/g, "&amp;")
@@ -1382,6 +1964,7 @@ export default function createHgmAnyTools(userOptions = {}) {
 
     function cssEscape(value) {
         if (window.CSS?.escape) return window.CSS.escape(value);
+
         return String(value || "").replace(/["\\]/g, "\\$&");
     }
 
@@ -1405,6 +1988,7 @@ export default function createHgmAnyTools(userOptions = {}) {
 
     function readAttributeOptions() {
         const element = document.querySelector("[data-hgm-any-tools]");
+
         if (!element) return {};
 
         const options = {};

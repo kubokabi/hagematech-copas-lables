@@ -1,34 +1,40 @@
 {
   "name": "@hgm/table-tools",
   "version": "1.0.0",
-  "description": "Reusable table tools for selective copy and temporary session-based lot labeling.",
-  "main": "dist/hgm-table-tools.cjs",
-  "module": "dist/hgm-table-tools.esm.js",
-  "style": "dist/hgm-table-tools.css",
+  "description": "Reusable JavaScript and CSS tools for table copy mode, label mode, pin badges, and temporary session-based annotation.",
+  "type": "module",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "style": "./src/hgm-table-tools.css",
   "exports": {
     ".": {
-      "import": "./dist/hgm-table-tools.esm.js",
-      "require": "./dist/hgm-table-tools.cjs"
+      "import": "./src/index.js"
     },
-    "./style.css": "./dist/hgm-table-tools.css"
+    "./style.css": "./src/hgm-table-tools.css",
+    "./src/index.js": "./src/index.js",
+    "./src/hgm-table-tools.css": "./src/hgm-table-tools.css"
   },
   "files": [
-    "dist"
+    "src",
+    "README.md",
+    "LICENSE"
   ],
-  "scripts": {
-    "build": "vite build"
-  },
   "keywords": [
     "table",
+    "copy",
     "excel",
     "spreadsheet",
-    "copy",
     "label",
-    "sessionStorage"
+    "labels",
+    "badge",
+    "annotation",
+    "sessionStorage",
+    "dashboard",
+    "crm",
+    "admin",
+    "javascript",
+    "css"
   ],
   "author": "HAGEMA TECH",
-  "license": "MIT",
-  "devDependencies": {
-    "vite": "^5.0.0"
-  }
+  "license": "MIT"
 }
