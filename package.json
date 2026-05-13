@@ -1,5 +1,5 @@
 {
-  "name": "@hgm/table-tools",
+  "name": "hgm-table-tools",
   "version": "1.0.0",
   "description": "Reusable JavaScript and CSS tools for table copy mode, label mode, pin badges, and temporary session-based annotation.",
   "type": "module",
@@ -36,5 +36,8 @@
     "css"
   ],
   "author": "HAGEMA TECH",
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }
