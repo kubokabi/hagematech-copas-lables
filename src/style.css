@@ -748,3 +748,18 @@ body.hgm-any-labels-active .hgm-grid {
         height: 8px;
     }
 }
+
+.hgm-any-menu h1,
+.hgm-any-menu h2,
+.hgm-any-menu h3,
+.hgm-any-menu h4,
+.hgm-any-menu h5,
+.hgm-any-menu h6,
+.hgm-any-menu strong,
+.hgm-any-label-popover strong,
+.hgm-any-warning-modal strong,
+.hgm-any-toast strong,
+.hgm-any-badge strong,
+.hgm-any-label-bar strong {
+    color: inherit;
+}
