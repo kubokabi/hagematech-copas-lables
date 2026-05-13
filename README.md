@@ -49,7 +49,7 @@ After publishing to npm, you can use the package from CDN.
 ### Using jsDelivr
 
 ```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hagematech-copas-labels/src/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hagematech-copas-labels@latest/src/style.css">
 
 <div
     data-hgm-any-tools
@@ -68,7 +68,7 @@ After publishing to npm, you can use the package from CDN.
 </div>
 
 <script type="module">
-    import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/hagematech-copas-labels/src/index.js";
+    import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/hagematech-copas-labels@latest/src/index.js";
 
     createHgmAnyTools().mount();
 </script>
@@ -77,7 +77,7 @@ After publishing to npm, you can use the package from CDN.
 ### Using unpkg
 
 ```html
-<link rel="stylesheet" href="https://unpkg.com/hagematech-copas-labels/src/style.css">
+<link rel="stylesheet" href="https://unpkg.com/hagematech-copas-labels@latest/src/style.css">
 
 <div
     data-hgm-any-tools
@@ -96,7 +96,7 @@ After publishing to npm, you can use the package from CDN.
 </div>
 
 <script type="module">
-    import createHgmAnyTools from "https://unpkg.com/hagematech-copas-labels/src/index.js";
+    import createHgmAnyTools from "https://unpkg.com/hagematech-copas-labels@latest/src/index.js";
 
     createHgmAnyTools().mount();
 </script>
@@ -113,7 +113,7 @@ After publishing to npm, you can use the package from CDN.
     <meta charset="UTF-8">
     <title>HGM Table Tools Example</title>
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hagematech-copas-labels/src/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/hagematech-copas-labels@latest/src/style.css">
 
     <style>
         body {
@@ -294,7 +294,7 @@ After publishing to npm, you can use the package from CDN.
     </div>
 
     <script type="module">
-        import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/hagematech-copas-labels/src/index.js";
+        import createHgmAnyTools from "https://cdn.jsdelivr.net/npm/hagematech-copas-labels@latest/src/index.js";
 
         createHgmAnyTools().mount();
     </script>
@@ -500,7 +500,7 @@ onBeforeUnmount(() => {
 ## Laravel / Blade Usage
 
 ```blade
-<link rel="stylesheet" href="{{ asset('vendor/hagematech-copas-labels/src/style.css') }}">
+<link rel="stylesheet" href="{{ asset('vendor/hagematech-copas-labels@latest/src/style.css') }}">
 
 <div
     data-hgm-any-tools
@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
 </table>
 
 <script type="module">
-    import createHgmAnyTools from "{{ asset('vendor/hagematech-copas-labels/src/index.js') }}";
+    import createHgmAnyTools from "{{ asset('vendor/hagematech-copas-labels@latest/src/index.js') }}";
 
     createHgmAnyTools().mount();
 </script>

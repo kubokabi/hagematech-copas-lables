@@ -1,6 +1,6 @@
 {
   "name": "hagematech-copas-labels",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Reusable JavaScript and CSS tools for table copy mode, label mode, pin badges, and temporary session-based annotation.",
   "type": "module",
   "main": "./src/index.js",
